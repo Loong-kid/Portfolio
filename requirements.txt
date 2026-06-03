@@ -1,0 +1,11 @@
+streamlit>=1.32
+pandas>=2.0
+numpy>=1.26
+plotly>=5.18
+python-dotenv>=1.0
+yfinance>=0.2.40
+pykrx>=1.0.45
+openpyxl>=3.1
+requests>=2.31
+gspread>=6.0
+google-auth>=2.28

@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+*.json
+!data/*.json
+data/price_cache.parquet
+data/*.bak
+.streamlit/secrets.toml
+*.xlsx
+*.xls
+.DS_Store
+Thumbs.db
+DEPLOY.md
