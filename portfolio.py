@@ -27,6 +27,8 @@ NAV_ANCHOR_HEADERS = ["날짜", "총자산", "순자산", "좌수_총", "좌수_
                        "기준가_총자산", "기준가_순자산"]
 STOCK_NOTES_HEADERS = ["종목", "목표가_상단", "목표가_하단",
                         "업사이드_메모", "다운사이드_메모", "업데이트일"]
+WATCHLIST_HEADERS = ["종목", "통화", "목표가_상단", "목표가_하단",
+                      "업사이드_메모", "다운사이드_메모", "업데이트일"]
 
 
 # ============== portfolio_order ==============
@@ -73,6 +75,58 @@ def save_stock_notes(df: pd.DataFrame) -> None:
     out["종목"] = out["종목"].astype(str).str.strip()
     out = out[out["종목"] != ""].reset_index(drop=True)
     sheets_db.write_tab("stock_notes", out)
+
+
+# ============== watchlist ==============
+
+def load_watchlist() -> pd.DataFrame:
+    df = sheets_db.read_tab("watchlist")
+    for col in WATCHLIST_HEADERS:
+        if col not in df.columns:
+            df[col] = ""
+    df["목표가_상단"] = pd.to_numeric(df["목표가_상단"], errors="coerce")
+    df["목표가_하단"] = pd.to_numeric(df["목표가_하단"], errors="coerce")
+    return df[WATCHLIST_HEADERS]
+
+
+def save_watchlist(df: pd.DataFrame) -> None:
+    out = df.copy()
+    for col in WATCHLIST_HEADERS:
+        if col not in out.columns:
+            out[col] = ""
+    out = out[WATCHLIST_HEADERS]
+    out["종목"] = out["종목"].astype(str).str.strip()
+    out = out[out["종목"] != ""].reset_index(drop=True)
+    sheets_db.write_tab("watchlist", out)
+
+
+def add_to_watchlist(ticker: str, currency: str, yfinance_symbol: str) -> dict:
+    """Register a new watchlist ticker and its yfinance symbol.
+
+    - Inserts/updates the ticker_map entry so price fetch works.
+    - Adds an empty notes row to the watchlist tab (skips if already present).
+    """
+    ticker = ticker.strip()
+    yfinance_symbol = yfinance_symbol.strip()
+    if not ticker or not yfinance_symbol:
+        return {"status": "error", "reason": "종목명·yfinance 심볼 모두 필요"}
+
+    from config import load_ticker_map, save_ticker_map
+    tmap = load_ticker_map()
+    tmap[ticker] = yfinance_symbol
+    save_ticker_map(tmap)
+
+    wl = load_watchlist()
+    if ticker in set(wl["종목"].astype(str)):
+        return {"status": "exists", "ticker": ticker}
+    new_row = pd.DataFrame([{
+        "종목": ticker, "통화": currency,
+        "목표가_상단": float("nan"), "목표가_하단": float("nan"),
+        "업사이드_메모": "", "다운사이드_메모": "", "업데이트일": "",
+    }])
+    wl = pd.concat([wl, new_row], ignore_index=True)
+    save_watchlist(wl)
+    return {"status": "added", "ticker": ticker, "symbol": yfinance_symbol}
 
 
 # ============== snapshots ==============

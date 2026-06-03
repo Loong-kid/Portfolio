@@ -24,6 +24,7 @@ from portfolio import (
     compute_nav_history, compute_income_summary,
     load_portfolio_order, save_portfolio_order,
     load_stock_notes, save_stock_notes, STOCK_NOTES_HEADERS,
+    load_watchlist, save_watchlist, add_to_watchlist, WATCHLIST_HEADERS,
     CASH_TICKERS, ACCOUNT_TICKERS, SNAPSHOT_HEADERS,
 )
 import sheets_db
@@ -69,6 +70,11 @@ def cached_load_debt() -> pd.DataFrame:
 @st.cache_data(ttl=60, show_spinner="NAV anchors 불러오는 중...")
 def cached_load_nav_anchors() -> pd.DataFrame:
     return load_nav_anchors()
+
+
+@st.cache_data(ttl=60, show_spinner="관찰 종목 불러오는 중...")
+def cached_load_watchlist() -> pd.DataFrame:
+    return load_watchlist()
 
 
 @st.cache_data(ttl=600, show_spinner="현재가 가져오는 중...")
@@ -141,6 +147,7 @@ snapshots_df = cached_load_snapshots()
 flows_df = cached_load_flows()
 debt_df = cached_load_debt()
 nav_anchors_df = cached_load_nav_anchors()
+watchlist_df = cached_load_watchlist()
 
 latest_snap_dt = latest_snapshot_date()
 holdings_raw = get_latest_snapshot() if not snapshots_df.empty else pd.DataFrame(
@@ -148,8 +155,11 @@ holdings_raw = get_latest_snapshot() if not snapshots_df.empty else pd.DataFrame
 
 tradable_tickers = tuple(t for t in holdings_raw.index
                          if t not in CASH_TICKERS and t not in ACCOUNT_TICKERS)
-prices, _prices_at = (cached_current_prices(tradable_tickers)
-                       if tradable_tickers else ({}, now_kst()))
+watchlist_tickers = tuple(t for t in watchlist_df["종목"].astype(str).tolist()
+                           if t.strip())
+_fetch_tickers = tuple(sorted(set(tradable_tickers) | set(watchlist_tickers)))
+prices, _prices_at = (cached_current_prices(_fetch_tickers)
+                       if _fetch_tickers else ({}, now_kst()))
 fx_rates, _fx_at = cached_fx()
 _snap_prices: dict[str, float] = {}
 if not holdings_raw.empty and "현재가" in holdings_raw.columns:
@@ -216,9 +226,9 @@ if is_admin:
         "📈 자산 추이", "🎯 종목 메모", "⚙️ 설정",
     ])
 else:
-    (tab1,) = st.tabs(["💼 현재 포트폴리오"])
-    # guest는 st.stop()으로 종료되지만 NameError 방지용 dummy placeholder
-    tab_snap = tab_flows = tab_nav = tab_notes = tab_settings = st.empty()
+    tab1, tab_notes = st.tabs(["💼 현재 포트폴리오", "🎯 종목 메모"])
+    # guest는 tab_notes 렌더 후 st.stop()으로 종료. 나머지는 NameError 방지용 placeholder
+    tab_snap = tab_flows = tab_nav = tab_settings = st.empty()
 
 
 # -------- Tab 1: Current Portfolio --------
@@ -371,7 +381,228 @@ with tab1:
                             margin=dict(t=10, b=10, l=10, r=80))
         st.plotly_chart(fig2, use_container_width=True)
 
-# Guest: tab1만 보여주고 끝
+# -------- Tab Notes: 종목 메모 (admin + guest 둘 다) --------
+with tab_notes:
+    st.subheader("🎯 종목 메모")
+
+    cat_map = load_category_map()
+    ticker_map = load_ticker_map()
+
+    def _upside_pct(row):
+        cur = row["현재가"]; tgt = row["목표가_상단"]
+        if pd.isna(cur) or pd.isna(tgt) or cur <= 0:
+            return float("nan")
+        return (tgt - cur) / cur * 100
+
+    def _downside_pct(row):
+        cur = row["현재가"]; tgt = row["목표가_하단"]
+        if pd.isna(cur) or pd.isna(tgt) or cur <= 0:
+            return float("nan")
+        return (tgt - cur) / cur * 100
+
+    def _rr_ratio(row):
+        u = row["업사이드_%"]; d = row["다운사이드_%"]
+        if pd.isna(u) or pd.isna(d) or d >= 0:
+            return float("nan")
+        return u / abs(d)
+
+    # ============ Section 1: 보유 종목 메모 ============
+    st.markdown("### 📦 보유 종목")
+    st.caption("보유 종목의 목표가/메모. 보유 안 한 옛 종목은 자동 숨김.")
+
+    notes_df = load_stock_notes()
+    held_tickers = [t for t in holdings_raw.index
+                    if t not in CASH_TICKERS and t not in ACCOUNT_TICKERS
+                    and "→" not in str(t)]
+    held_set = set(held_tickers)
+    notes_held = (notes_df[notes_df["종목"].astype(str).isin(held_set)].copy()
+                  if not notes_df.empty else pd.DataFrame(columns=STOCK_NOTES_HEADERS))
+    notes_known = set(notes_held["종목"].astype(str))
+    missing = [t for t in held_tickers if t not in notes_known]
+    if missing:
+        add_rows = pd.DataFrame([{
+            "종목": t, "목표가_상단": float("nan"), "목표가_하단": float("nan"),
+            "업사이드_메모": "", "다운사이드_메모": "", "업데이트일": "",
+        } for t in missing])
+        notes_held = (pd.concat([notes_held, add_rows], ignore_index=True)
+                      if not notes_held.empty else add_rows)
+
+    if notes_held.empty:
+        st.info("보유 종목이 없습니다. 📸 스냅샷 탭에서 추가하면 여기에 자동으로 뜹니다.")
+    else:
+        view = notes_held.copy()
+        view["카테고리"] = view["종목"].map(lambda t: cat_map.get(str(t), "기타"))
+        view["통화"] = view["종목"].map(
+            lambda t: str(holdings_raw.loc[t, "통화"])
+                if t in holdings_raw.index else "")
+        view["평균단가"] = view["종목"].map(
+            lambda t: float(holdings_raw.loc[t, "평균단가"])
+                if t in holdings_raw.index else float("nan"))
+        view["현재가"] = view["종목"].map(
+            lambda t: float(prices.get(t)) if prices.get(t) else float("nan"))
+        view["업사이드_%"] = view.apply(_upside_pct, axis=1)
+        view["다운사이드_%"] = view.apply(_downside_pct, axis=1)
+        view["R/R"] = view.apply(_rr_ratio, axis=1)
+
+        display_cols = ["종목", "카테고리", "통화", "평균단가", "현재가",
+                         "목표가_상단", "업사이드_%", "목표가_하단", "다운사이드_%",
+                         "R/R", "업사이드_메모", "다운사이드_메모", "업데이트일"]
+        view = view[display_cols]
+
+        _notes_col_cfg = {
+            "종목": st.column_config.TextColumn(width="medium"),
+            "카테고리": st.column_config.TextColumn(width="small"),
+            "통화": st.column_config.TextColumn(width="small"),
+            "평균단가": st.column_config.NumberColumn(format="%.4g"),
+            "현재가": st.column_config.NumberColumn(format="%.4g"),
+            "목표가_상단": st.column_config.NumberColumn(
+                "🎯 목표가 (상단)", format="%.4g"),
+            "업사이드_%": st.column_config.NumberColumn(format="%+.1f%%"),
+            "목표가_하단": st.column_config.NumberColumn(
+                "🛡️ 목표가 (하단)", format="%.4g"),
+            "다운사이드_%": st.column_config.NumberColumn(format="%+.1f%%"),
+            "R/R": st.column_config.NumberColumn(format="%.2f"),
+            "업사이드_메모": st.column_config.TextColumn(
+                "📈 업사이드 메모", width="large"),
+            "다운사이드_메모": st.column_config.TextColumn(
+                "📉 다운사이드 메모", width="large"),
+            "업데이트일": st.column_config.TextColumn(width="small"),
+        }
+        if is_admin:
+            edited_notes = st.data_editor(
+                view, use_container_width=True, hide_index=True, num_rows="fixed",
+                key="notes_editor",
+                column_config=_notes_col_cfg,
+                disabled=["종목", "카테고리", "통화", "평균단가", "현재가",
+                           "업사이드_%", "다운사이드_%", "R/R"],
+            )
+            if st.button("💾 보유 종목 메모 저장", type="primary", key="save_notes"):
+                to_save = edited_notes.copy()
+                to_save = to_save[STOCK_NOTES_HEADERS[:5] + ["업데이트일"]]
+                today_str = today_kst().strftime("%Y-%m-%d")
+                to_save["업데이트일"] = to_save["업데이트일"].astype(str).where(
+                    to_save["업데이트일"].astype(str).str.strip() != "", today_str)
+                # 기존 notes_df의 보유 외 종목은 그대로 유지 (concat)
+                others = (notes_df[~notes_df["종목"].astype(str).isin(held_set)]
+                          if not notes_df.empty else pd.DataFrame(columns=STOCK_NOTES_HEADERS))
+                merged = pd.concat([to_save, others], ignore_index=True)
+                save_stock_notes(merged)
+                st.cache_data.clear()
+                st.success(f"✅ {len(to_save)}개 보유 종목 메모 저장됨")
+                st.rerun()
+        else:
+            st.dataframe(view, use_container_width=True, hide_index=True,
+                          column_config=_notes_col_cfg)
+
+    st.divider()
+
+    # ============ Section 2: 관찰 종목 ============
+    st.markdown("### 👁️ 관찰 종목")
+    st.caption(
+        "보유하지 않지만 추적할 종목. 현재가 fetch + 목표가 대비 업사이드/다운사이드 계산. "
+        "편입할지 고민 중이거나 관심 종목 메모 자리."
+    )
+
+    if is_admin:
+        with st.expander("➕ 관찰 종목 추가"):
+            with st.form("watchlist_add_form", clear_on_submit=True):
+                wa_c1, wa_c2, wa_c3 = st.columns([2, 2, 1])
+                with wa_c1:
+                    new_name = st.text_input(
+                        "종목명", placeholder="예: 엔비디아, 삼성전자",
+                        key="wl_add_name")
+                with wa_c2:
+                    new_symbol = st.text_input(
+                        "yfinance 심볼",
+                        placeholder="예: NVDA / 005930.KS / 475960.KQ",
+                        help="미국 종목은 티커, 한국 종목은 종목코드+.KS(코스피)/.KQ(코스닥)",
+                        key="wl_add_symbol")
+                with wa_c3:
+                    new_ccy = st.selectbox("통화", ["KRW", "USD", "EUR", "JPY"],
+                                             key="wl_add_ccy")
+                wa_submit = st.form_submit_button("➕ 등록", type="primary",
+                                                     use_container_width=True)
+                if wa_submit:
+                    name_clean = new_name.strip()
+                    sym_clean = new_symbol.strip()
+                    if not name_clean or not sym_clean:
+                        st.error("종목명과 yfinance 심볼 모두 입력")
+                    elif name_clean in held_set:
+                        st.error(f"'{name_clean}'은 이미 보유 종목입니다 (관찰 등록 불필요)")
+                    else:
+                        res = add_to_watchlist(name_clean, new_ccy, sym_clean)
+                        st.cache_data.clear()
+                        if res["status"] == "added":
+                            st.success(f"✅ '{name_clean}' ({sym_clean}) 등록됨. 현재가는 다음 새로고침 시 fetch됨.")
+                        elif res["status"] == "exists":
+                            st.warning(f"⚠️ '{name_clean}'은 이미 관찰 종목입니다 (ticker_map만 업데이트)")
+                        else:
+                            st.error(f"❌ {res.get('reason', '등록 실패')}")
+                        st.rerun()
+
+    if watchlist_df.empty:
+        st.info("관찰 종목이 없습니다." + (" 위 expander에서 추가하세요." if is_admin else ""))
+    else:
+        wview = watchlist_df.copy()
+        wview["현재가"] = wview["종목"].map(
+            lambda t: float(prices.get(t)) if prices.get(t) else float("nan"))
+        wview["업사이드_%"] = wview.apply(_upside_pct, axis=1)
+        wview["다운사이드_%"] = wview.apply(_downside_pct, axis=1)
+        wview["R/R"] = wview.apply(_rr_ratio, axis=1)
+        wview["yfinance_symbol"] = wview["종목"].map(
+            lambda t: ticker_map.get(str(t), ""))
+
+        wdisplay_cols = ["종목", "yfinance_symbol", "통화", "현재가",
+                          "목표가_상단", "업사이드_%", "목표가_하단", "다운사이드_%",
+                          "R/R", "업사이드_메모", "다운사이드_메모", "업데이트일"]
+        wview = wview[wdisplay_cols]
+
+        _wl_col_cfg = {
+            "종목": st.column_config.TextColumn(width="medium"),
+            "yfinance_symbol": st.column_config.TextColumn("심볼", width="small"),
+            "통화": st.column_config.TextColumn(width="small"),
+            "현재가": st.column_config.NumberColumn(format="%.4g"),
+            "목표가_상단": st.column_config.NumberColumn(
+                "🎯 목표가 (상단)", format="%.4g"),
+            "업사이드_%": st.column_config.NumberColumn(format="%+.1f%%"),
+            "목표가_하단": st.column_config.NumberColumn(
+                "🛡️ 목표가 (하단)", format="%.4g"),
+            "다운사이드_%": st.column_config.NumberColumn(format="%+.1f%%"),
+            "R/R": st.column_config.NumberColumn(format="%.2f"),
+            "업사이드_메모": st.column_config.TextColumn(
+                "📈 업사이드 메모", width="large"),
+            "다운사이드_메모": st.column_config.TextColumn(
+                "📉 다운사이드 메모", width="large"),
+            "업데이트일": st.column_config.TextColumn(width="small"),
+        }
+        if is_admin:
+            edited_wl = st.data_editor(
+                wview, use_container_width=True, hide_index=True,
+                num_rows="dynamic",
+                key="watchlist_editor",
+                column_config=_wl_col_cfg,
+                disabled=["종목", "yfinance_symbol", "통화", "현재가",
+                           "업사이드_%", "다운사이드_%", "R/R"],
+            )
+            st.caption("💡 행 삭제는 표에서 직접 (왼쪽 체크박스 → Delete). 새 종목 추가는 위 expander 사용.")
+            if st.button("💾 관찰 종목 메모 저장", type="primary",
+                           key="save_watchlist"):
+                to_save = edited_wl.copy()
+                to_save = to_save[WATCHLIST_HEADERS[:1] + WATCHLIST_HEADERS[1:6]
+                                  + ["업데이트일"]]
+                today_str = today_kst().strftime("%Y-%m-%d")
+                to_save["업데이트일"] = to_save["업데이트일"].astype(str).where(
+                    to_save["업데이트일"].astype(str).str.strip() != "", today_str)
+                save_watchlist(to_save)
+                st.cache_data.clear()
+                st.success(f"✅ {len(to_save)}개 관찰 종목 메모 저장됨")
+                st.rerun()
+        else:
+            st.dataframe(wview, use_container_width=True, hide_index=True,
+                          column_config=_wl_col_cfg)
+
+
+# Guest: tab1 + tab_notes 보여주고 끝
 if is_guest:
     st.stop()
 
@@ -999,105 +1230,6 @@ with tab_nav:
                               column_config={
                                   "부채": st.column_config.NumberColumn(format="₩%,d"),
                               })
-
-
-# -------- Tab 5: Stock Notes --------
-with tab_notes:
-    st.subheader("🎯 종목 메모 · 목표가")
-    st.caption("종목별 목표가(상단/하단)와 업사이드/다운사이드 메모. "
-                "보유 종목 자동 채움 + 워치리스트 자유 추가.")
-
-    notes_df = load_stock_notes()
-    held_tickers = [t for t in holdings_raw.index
-                    if t not in CASH_TICKERS and t not in ACCOUNT_TICKERS
-                    and "→" not in str(t)]
-    notes_known = set(notes_df["종목"].astype(str)) if not notes_df.empty else set()
-    missing = [t for t in held_tickers if t not in notes_known]
-    if missing:
-        add_rows = pd.DataFrame([{
-            "종목": t, "목표가_상단": float("nan"), "목표가_하단": float("nan"),
-            "업사이드_메모": "", "다운사이드_메모": "", "업데이트일": "",
-        } for t in missing])
-        notes_df = (pd.concat([notes_df, add_rows], ignore_index=True)
-                     if not notes_df.empty else add_rows)
-
-    cat_map = load_category_map()
-    view = notes_df.copy()
-    view["카테고리"] = view["종목"].map(lambda t: cat_map.get(str(t), "기타"))
-    view["통화"] = view["종목"].map(
-        lambda t: str(holdings_raw.loc[t, "통화"])
-            if t in holdings_raw.index else "")
-    view["평균단가"] = view["종목"].map(
-        lambda t: float(holdings_raw.loc[t, "평균단가"])
-            if t in holdings_raw.index else float("nan"))
-    view["현재가"] = view["종목"].map(
-        lambda t: float(prices.get(t)) if prices.get(t) else float("nan"))
-
-    def _upside_pct(row):
-        cur = row["현재가"]; tgt = row["목표가_상단"]
-        if pd.isna(cur) or pd.isna(tgt) or cur <= 0:
-            return float("nan")
-        return (tgt - cur) / cur * 100
-
-    def _downside_pct(row):
-        cur = row["현재가"]; tgt = row["목표가_하단"]
-        if pd.isna(cur) or pd.isna(tgt) or cur <= 0:
-            return float("nan")
-        return (tgt - cur) / cur * 100
-
-    def _rr_ratio(row):
-        u = row["업사이드_%"]; d = row["다운사이드_%"]
-        if pd.isna(u) or pd.isna(d) or d >= 0:
-            return float("nan")
-        return u / abs(d)
-
-    view["업사이드_%"] = view.apply(_upside_pct, axis=1)
-    view["다운사이드_%"] = view.apply(_downside_pct, axis=1)
-    view["R/R"] = view.apply(_rr_ratio, axis=1)
-
-    display_cols = ["종목", "카테고리", "통화", "평균단가", "현재가",
-                     "목표가_상단", "업사이드_%", "목표가_하단", "다운사이드_%",
-                     "R/R", "업사이드_메모", "다운사이드_메모", "업데이트일"]
-    view = view[display_cols]
-
-    edited_notes = st.data_editor(
-        view, use_container_width=True, hide_index=True, num_rows="dynamic",
-        key="notes_editor",
-        column_config={
-            "종목": st.column_config.TextColumn(width="medium"),
-            "카테고리": st.column_config.TextColumn(width="small"),
-            "통화": st.column_config.TextColumn(width="small"),
-            "평균단가": st.column_config.NumberColumn(format="%.4g"),
-            "현재가": st.column_config.NumberColumn(format="%.4g"),
-            "목표가_상단": st.column_config.NumberColumn(
-                "🎯 목표가 (상단)", format="%.4g"),
-            "업사이드_%": st.column_config.NumberColumn(format="%+.1f%%"),
-            "목표가_하단": st.column_config.NumberColumn(
-                "🛡️ 목표가 (하단)", format="%.4g"),
-            "다운사이드_%": st.column_config.NumberColumn(format="%+.1f%%"),
-            "R/R": st.column_config.NumberColumn(format="%.2f"),
-            "업사이드_메모": st.column_config.TextColumn(
-                "📈 업사이드 메모", width="large"),
-            "다운사이드_메모": st.column_config.TextColumn(
-                "📉 다운사이드 메모", width="large"),
-            "업데이트일": st.column_config.TextColumn(width="small"),
-        },
-        disabled=["카테고리", "통화", "평균단가", "현재가",
-                   "업사이드_%", "다운사이드_%", "R/R"],
-    )
-
-    if st.button("💾 메모 저장", type="primary", key="save_notes"):
-        to_save = edited_notes.copy()
-        to_save = to_save[STOCK_NOTES_HEADERS[:5] + ["업데이트일"]]
-        today_str = today_kst().strftime("%Y-%m-%d")
-        to_save["업데이트일"] = to_save["업데이트일"].astype(str).where(
-            to_save["업데이트일"].astype(str).str.strip() != "", today_str)
-        save_stock_notes(to_save)
-        st.cache_data.clear()
-        st.success(
-            f"✅ {len(to_save[to_save['종목'].astype(str).str.strip() != ''])}개 "
-            "종목 메모 저장됨")
-        st.rerun()
 
 
 # -------- Tab 6: Settings --------

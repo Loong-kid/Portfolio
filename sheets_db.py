@@ -4,7 +4,8 @@ Tabs:
   snapshots       — 날짜별 보유 상태 (truth)
   flows           — 외부 자금 유입/유출 (좌수/기준가 계산용)
   debt_history    — 부채 LOCF 시계열
-  stock_notes     — 목표가/메모
+  stock_notes     — 보유 종목 목표가/메모
+  watchlist       — 관찰 종목 목표가/메모 (비보유)
   categories      — 종목→카테고리 매핑
   ticker_map      — 종목→yfinance 심볼 매핑
   portfolio_order — 메인 표 정렬 순서
@@ -22,6 +23,7 @@ SCHEMAS: dict[str, list[str]] = {
     "debt_history":    ["날짜", "부채", "메모"],
     "nav_anchors":     ["날짜", "총자산", "순자산", "좌수_총", "좌수_순", "기준가_총자산", "기준가_순자산"],
     "stock_notes":     ["종목", "목표가_상단", "목표가_하단", "업사이드_메모", "다운사이드_메모", "업데이트일"],
+    "watchlist":       ["종목", "통화", "목표가_상단", "목표가_하단", "업사이드_메모", "다운사이드_메모", "업데이트일"],
     "categories":      ["종목", "카테고리"],
     "ticker_map":      ["종목", "yfinance_symbol"],
     "portfolio_order": ["종목", "순서"],
