@@ -16,9 +16,15 @@ def _secret(key: str, default: str = "") -> str:
     """st.secrets 우선, 없으면 env, 없으면 default."""
     try:
         import streamlit as st
-        if key in st.secrets:
-            v = st.secrets[key]
-            return str(v).strip() if v is not None else default
+        # st.secrets에서 직접 .get() — KeyError/FileNotFoundError 안 던짐
+        v = None
+        if hasattr(st, "secrets"):
+            try:
+                v = st.secrets.get(key)
+            except (FileNotFoundError, AttributeError):
+                v = None
+        if v is not None and str(v).strip():
+            return str(v).strip()
     except Exception:
         pass
     return (os.environ.get(key) or default).strip()
