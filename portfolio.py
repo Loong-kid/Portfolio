@@ -328,33 +328,47 @@ def save_nav_anchors(df: pd.DataFrame) -> None:
 
 def value_holdings(holdings: pd.DataFrame,
                     current_prices: dict[str, float],
-                    fx_rates: dict[str, float]) -> pd.DataFrame:
-    """Add 카테고리, 환율, 현재가, 평가액(원), 평가손익(원), 수익률.
+                    fx_rates: dict[str, float],
+                    snapshot_prices: dict[str, float] | None = None,
+                    ) -> pd.DataFrame:
+    """Add 카테고리, 환율, 현재가, 평가액(원), 평가손익(원), 수익률, 가격출처.
 
     holdings: DataFrame indexed by 종목 with columns 통화, 수량, 평균단가.
+    snapshot_prices: dict[종목→현재가] from the latest snapshot. Used when
+        live fetch fails. Pass None to disable fallback (가격출처='missing').
+
+    가격출처 values: 'live' (실시간 fetch), 'snapshot' (스냅샷 가격 fallback),
+        'missing' (둘 다 없음 — 현재가/평가액 NaN), 'cash' (현금/연금).
     """
     if holdings.empty:
         return holdings.assign(카테고리="", 현재가=0.0, 평가액=0.0,
-                                평가손익=0.0, 수익률=0.0, 환율=1.0)
+                                평가손익=0.0, 수익률=0.0, 환율=1.0,
+                                가격출처="")
 
     df = holdings.copy()
     cat_map = load_category_map()
     df["카테고리"] = df.index.map(lambda t: cat_map.get(t, "기타"))
+    snapshot_prices = snapshot_prices or {}
 
     def _row_value(row):
         ticker = row.name
         ccy = row["통화"]
         fx = fx_rates.get(ccy, DEFAULT_FX.get(ccy, 1.0))
         if ticker in CASH_TICKERS or ticker in ACCOUNT_TICKERS:
-            cur_price = 1.0
-            value = row["수량"] * fx
-        else:
-            cur_price = current_prices.get(ticker, row["평균단가"])
-            value = row["수량"] * cur_price * fx
-        return cur_price, value, fx
+            return 1.0, row["수량"] * fx, fx, "cash"
+        live = current_prices.get(ticker)
+        if live is not None and not pd.isna(live) and live > 0:
+            return float(live), row["수량"] * float(live) * fx, fx, "live"
+        snap = snapshot_prices.get(ticker)
+        if snap is not None and not pd.isna(snap) and snap > 0:
+            return float(snap), row["수량"] * float(snap) * fx, fx, "snapshot"
+        return float("nan"), float("nan"), fx, "missing"
 
-    df[["현재가", "평가액", "환율"]] = df.apply(
+    df[["현재가", "평가액", "환율", "가격출처"]] = df.apply(
         lambda r: pd.Series(_row_value(r)), axis=1)
+    df["현재가"] = pd.to_numeric(df["현재가"], errors="coerce")
+    df["평가액"] = pd.to_numeric(df["평가액"], errors="coerce")
+    df["환율"] = pd.to_numeric(df["환율"], errors="coerce")
     # cost basis at snapshot avg price (KRW, using current fx as approximation)
     df["원가"] = df["수량"] * df["평균단가"] * df["환율"]
     df["평가손익"] = df["평가액"] - df["원가"]

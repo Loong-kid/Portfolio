@@ -151,7 +151,16 @@ tradable_tickers = tuple(t for t in holdings_raw.index
 prices, _prices_at = (cached_current_prices(tradable_tickers)
                        if tradable_tickers else ({}, now_kst()))
 fx_rates, _fx_at = cached_fx()
-valued = value_holdings(holdings_raw, prices, fx_rates)
+_snap_prices: dict[str, float] = {}
+if not holdings_raw.empty and "현재가" in holdings_raw.columns:
+    _snap_prices = {
+        t: float(v) for t, v in holdings_raw["현재가"].items()
+        if pd.notna(v) and float(v) > 0
+    }
+valued = value_holdings(holdings_raw, prices, fx_rates,
+                         snapshot_prices=_snap_prices)
+_fallback_snapshot = (valued["가격출처"] == "snapshot").sum() if "가격출처" in valued.columns else 0
+_fallback_missing = (valued["가격출처"] == "missing").sum() if "가격출처" in valued.columns else 0
 
 total_value = float(valued["평가액"].sum()) if not valued.empty else 0.0
 total_unrealized = float(valued["평가손익"].sum()) if not valued.empty else 0.0
@@ -162,6 +171,14 @@ if is_admin:
         st.divider()
         st.caption(f"📈 현재가: **{_prices_at.strftime('%H:%M:%S')} KST** · 10분 캐시")
         st.caption(f"💱 환율: **{_fx_at.strftime('%H:%M:%S')} KST** · 10분 캐시")
+        if _fallback_snapshot or _fallback_missing:
+            _fb_tickers = valued[valued["가격출처"].isin(("snapshot", "missing"))].index.tolist()
+            _msg_lines = ["⚠️ 일부 종목 현재가 fetch 실패:"]
+            for _t in _fb_tickers:
+                _src = valued.loc[_t, "가격출처"]
+                _tag = "스냅샷 가격 사용" if _src == "snapshot" else "가격 없음"
+                _msg_lines.append(f"• **{_t}** — {_tag}")
+            st.warning("\n\n".join(_msg_lines))
 
 
 # ============== HEADER ==============
