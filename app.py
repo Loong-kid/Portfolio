@@ -12,7 +12,8 @@ from datetime import datetime
 
 from config import (PORTFOLIO_NAME, GOOGLE_SHEET_ID,
                     load_category_map, save_category_map,
-                    load_ticker_map, save_ticker_map)
+                    load_ticker_map, save_ticker_map,
+                    now_kst, today_kst)
 from portfolio import (
     load_snapshots, list_snapshot_dates, latest_snapshot_date,
     get_snapshot, get_latest_snapshot, save_snapshot, delete_snapshot,
@@ -73,12 +74,12 @@ def cached_load_nav_anchors() -> pd.DataFrame:
 @st.cache_data(ttl=600, show_spinner="현재가 가져오는 중...")
 def cached_current_prices(tickers_tuple: tuple[str, ...]
                           ) -> tuple[dict[str, float], datetime]:
-    return get_prices_bulk(list(tickers_tuple)), datetime.now()
+    return get_prices_bulk(list(tickers_tuple)), now_kst()
 
 
 @st.cache_data(ttl=600, show_spinner="환율 가져오는 중...")
 def cached_fx() -> tuple[dict[str, float], datetime]:
-    return get_current_fx(), datetime.now()
+    return get_current_fx(), now_kst()
 
 
 @st.cache_data(ttl=3600, show_spinner="가격 이력 가져오는 중...")
@@ -148,7 +149,7 @@ holdings_raw = get_latest_snapshot() if not snapshots_df.empty else pd.DataFrame
 tradable_tickers = tuple(t for t in holdings_raw.index
                          if t not in CASH_TICKERS and t not in ACCOUNT_TICKERS)
 prices, _prices_at = (cached_current_prices(tradable_tickers)
-                       if tradable_tickers else ({}, datetime.now()))
+                       if tradable_tickers else ({}, now_kst()))
 fx_rates, _fx_at = cached_fx()
 valued = value_holdings(holdings_raw, prices, fx_rates)
 
@@ -159,8 +160,8 @@ total_cost = float(valued["원가"].sum()) if not valued.empty else 0.0
 if is_admin:
     with st.sidebar:
         st.divider()
-        st.caption(f"📈 현재가: **{_prices_at.strftime('%H:%M:%S')}** · 10분 캐시")
-        st.caption(f"💱 환율: **{_fx_at.strftime('%H:%M:%S')}** · 10분 캐시")
+        st.caption(f"📈 현재가: **{_prices_at.strftime('%H:%M:%S')} KST** · 10분 캐시")
+        st.caption(f"💱 환율: **{_fx_at.strftime('%H:%M:%S')} KST** · 10분 캐시")
 
 
 # ============== HEADER ==============
@@ -436,7 +437,7 @@ with tab_snap:
     if snap_list.empty:
         st.warning("스냅샷 없음. 아래 표에 입력하고 저장해줘.")
         target_date = st.date_input("✨ 첫 스냅샷 날짜",
-                                       value=datetime.now().date(),
+                                       value=today_kst(),
                                        key="snap_new_date_empty")
         seed_df = pd.DataFrame([
             {"종목": "KRW현금", "통화": "KRW", "수량": 1000000.0, "평균단가": 1.0,
@@ -479,11 +480,11 @@ with tab_snap:
             with sd_c2:
                 new_date = st.date_input(
                     "새 스냅샷 날짜 (과거 시점도 가능)",
-                    value=datetime.now().date(),
+                    value=today_kst(),
                     key="snap_new_date")
             target_dt = pd.Timestamp(new_date)
 
-        is_today = target_dt.normalize() == pd.Timestamp(datetime.now()).normalize()
+        is_today = target_dt.normalize() == pd.Timestamp(now_kst()).normalize()
 
         # Pre-fill
         existing = get_snapshot(target_dt)
@@ -638,7 +639,7 @@ with tab_flows:
         st.markdown("##### ➕ 새 흐름 추가")
         ff_c1, ff_c2, ff_c3 = st.columns(3)
         with ff_c1:
-            f_date = st.date_input("날짜", value=datetime.now().date(),
+            f_date = st.date_input("날짜", value=today_kst(),
                                      key="flow_date")
             f_ccy = st.selectbox("통화", ["KRW", "USD", "EUR", "JPY"],
                                    key="flow_ccy")
@@ -723,7 +724,7 @@ with tab_nav:
         if not nav_anchors_df.empty:
             candidates.append(nav_anchors_df["날짜"].min().date())
         d_first = min(candidates)
-        d_today = datetime.now().date()
+        d_today = today_kst()
         rc_c1, rc_c2 = st.columns([3, 1])
         with rc_c1:
             date_range = st.date_input(
@@ -856,7 +857,7 @@ with tab_nav:
                 uc4.metric("좌수 순", f"{ulast['좌수_순']:,.2f}")
 
                 # ──── YTD 기준가 수익률 ────
-                this_year = datetime.now().year
+                this_year = now_kst().year
                 year_start = pd.Timestamp(this_year, 1, 1)
                 unit_pre = unit_view[unit_view["날짜"] < year_start]
                 if not unit_pre.empty:
@@ -945,7 +946,7 @@ with tab_nav:
         )
         dc1, dc2, dc3 = st.columns([2, 2, 1])
         with dc1:
-            debt_date = st.date_input("날짜", value=datetime.now().date(),
+            debt_date = st.date_input("날짜", value=today_kst(),
                                         key="debt_d")
         with dc2:
             _last_debt = float(debt_df.iloc[-1]["부채"]) if not debt_df.empty else 0.0
@@ -1069,10 +1070,9 @@ with tab_notes:
     )
 
     if st.button("💾 메모 저장", type="primary", key="save_notes"):
-        from datetime import date as _date
         to_save = edited_notes.copy()
         to_save = to_save[STOCK_NOTES_HEADERS[:5] + ["업데이트일"]]
-        today_str = _date.today().strftime("%Y-%m-%d")
+        today_str = today_kst().strftime("%Y-%m-%d")
         to_save["업데이트일"] = to_save["업데이트일"].astype(str).where(
             to_save["업데이트일"].astype(str).str.strip() != "", today_str)
         save_stock_notes(to_save)

@@ -12,7 +12,7 @@ from __future__ import annotations
 import pandas as pd
 import numpy as np
 from datetime import datetime
-from config import DEFAULT_FX, load_category_map
+from config import DEFAULT_FX, load_category_map, now_kst
 import sheets_db
 
 
@@ -145,7 +145,7 @@ def get_snapshot_at_or_before(as_of: datetime) -> tuple[datetime, pd.DataFrame] 
 
 def get_latest_snapshot() -> pd.DataFrame:
     """Most recent snapshot, indexed by 종목. Empty df if none."""
-    res = get_snapshot_at_or_before(datetime.now())
+    res = get_snapshot_at_or_before(now_kst())
     if res is None:
         return pd.DataFrame(columns=["통화", "수량", "평균단가",
                                        "현재가", "환율", "평가액"])
@@ -459,7 +459,7 @@ def compute_nav_history(snapshots_df: pd.DataFrame,
     overall_start = min(candidate_starts)
 
     start = pd.Timestamp(start).normalize() if start is not None else overall_start
-    end = pd.Timestamp(end).normalize() if end is not None else pd.Timestamp(datetime.now()).normalize()
+    end = pd.Timestamp(end).normalize() if end is not None else pd.Timestamp(now_kst()).normalize()
     if end < start:
         return pd.DataFrame(columns=cols)
 
@@ -624,7 +624,7 @@ def compute_income_summary(nav_history: pd.DataFrame,
     if nav_history is None or nav_history.empty:
         return {"status": "no nav history"}
 
-    today = pd.Timestamp(today or datetime.now()).normalize()
+    today = pd.Timestamp(today or now_kst()).normalize()
     h = nav_history.copy()
     h["날짜"] = pd.to_datetime(h["날짜"]).dt.normalize()
     h = h[h["날짜"] <= today].sort_values("날짜")

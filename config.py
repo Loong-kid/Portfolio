@@ -4,12 +4,30 @@
 Streamlit Cloud 배포 시 secrets, 로컬은 .env 사용.
 """
 from pathlib import Path
+from datetime import datetime, date
+from zoneinfo import ZoneInfo
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
 
 ROOT = Path(__file__).parent
+
+KST = ZoneInfo("Asia/Seoul")
+
+
+def now_kst() -> datetime:
+    """Naive datetime in Asia/Seoul wall time.
+
+    Streamlit Cloud runs in UTC; this anchors the app to KST regardless of
+    server tz. Returns naive datetime (no tzinfo) so downstream pandas /
+    strftime code stays unchanged.
+    """
+    return datetime.now(KST).replace(tzinfo=None)
+
+
+def today_kst() -> date:
+    return datetime.now(KST).date()
 
 
 def _secret(key: str, default: str = "") -> str:

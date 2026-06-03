@@ -8,7 +8,7 @@ from __future__ import annotations
 import pandas as pd
 from datetime import datetime, timedelta
 import yfinance as yf
-from config import load_ticker_map, FX_TICKERS, DEFAULT_FX
+from config import load_ticker_map, FX_TICKERS, DEFAULT_FX, now_kst
 
 
 def _is_korean(symbol: str) -> bool:
@@ -24,7 +24,7 @@ def _to_pykrx_code(symbol: str) -> str | None:
 def _pykrx_current(code: str) -> float | None:
     try:
         from pykrx import stock
-        end = datetime.now()
+        end = now_kst()
         start = end - timedelta(days=14)
         df = stock.get_market_ohlcv(start.strftime("%Y%m%d"),
                                       end.strftime("%Y%m%d"), code)
@@ -89,7 +89,7 @@ def get_price_history(ticker_name: str, start: datetime, end: datetime | None = 
     symbol = load_ticker_map().get(ticker_name)
     if not symbol:
         return pd.Series(dtype=float)
-    end = end or datetime.now()
+    end = end or now_kst()
     if _is_korean(symbol):
         code = _to_pykrx_code(symbol)
         if code:
@@ -111,12 +111,12 @@ def get_price_history(ticker_name: str, start: datetime, end: datetime | None = 
 
 def get_fx_history(currency: str, start: datetime, end: datetime | None = None) -> pd.Series:
     if currency == "KRW":
-        idx = pd.date_range(start=start, end=(end or datetime.now()), freq="D")
+        idx = pd.date_range(start=start, end=(end or now_kst()), freq="D")
         return pd.Series(1.0, index=idx)
     symbol = FX_TICKERS.get(currency)
     if not symbol:
         return pd.Series(dtype=float)
-    end = end or datetime.now()
+    end = end or now_kst()
     try:
         df = yf.Ticker(symbol).history(start=start.strftime("%Y-%m-%d"),
                                         end=(end + timedelta(days=1)).strftime("%Y-%m-%d"),
