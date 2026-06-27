@@ -1169,6 +1169,46 @@ with tab_nav:
             else:
                 st.info("기준가 차트는 최소 2 영업일 이상일 때 표시됨.")
 
+            # ──── 좌수 추이 ────
+            if len(nav_hist) >= 2:
+                st.markdown("##### 🧮 좌수 추이")
+                st.caption(
+                    "좌수 = 펀드의 총 출자 단위 수. **외부 자금 유입 시 증가, 유출 시 감소** "
+                    "(운용 손익으로는 안 바뀜). 평평한 구간 = 외부 자금 변동 없음, "
+                    "계단이 생긴 날 = flows 발생일. **총자산 기준** = 부채 포함 / "
+                    "**순자산 기준** = 부채 변동 캔슬."
+                )
+                fig_units = go.Figure()
+                fig_units.add_trace(go.Scatter(
+                    x=nav_hist["날짜"], y=nav_hist["좌수_총"],
+                    mode="lines", name="좌수 (총자산)",
+                    line=dict(color="#6A4C93", width=2.5, shape="hv")))
+                if (nav_hist["좌수_순"] > 0).any():
+                    fig_units.add_trace(go.Scatter(
+                        x=nav_hist["날짜"], y=nav_hist["좌수_순"],
+                        mode="lines", name="좌수 (순자산)",
+                        line=dict(color="#1B998B", width=2.5, dash="dot",
+                                   shape="hv")))
+                fig_units.update_layout(
+                    height=320, yaxis_title="좌수", xaxis_title="",
+                    hovermode="x unified",
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02,
+                                  xanchor="right", x=1),
+                    margin=dict(t=30, b=10, l=10, r=10))
+                fig_units.update_yaxes(tickformat=",.0f")
+                st.plotly_chart(fig_units, use_container_width=True)
+
+                ufirst_u = nav_hist.iloc[0]
+                ulast_u = nav_hist.iloc[-1]
+                duc1, duc2, duc3 = st.columns(3)
+                duc1.metric("좌수 총 (현재)", f"{ulast_u['좌수_총']:,.2f}",
+                              f"{ulast_u['좌수_총'] - ufirst_u['좌수_총']:+,.2f}")
+                if (nav_hist["좌수_순"] > 0).any():
+                    duc2.metric("좌수 순 (현재)", f"{ulast_u['좌수_순']:,.2f}",
+                                  f"{ulast_u['좌수_순'] - ufirst_u['좌수_순']:+,.2f}")
+                duc3.metric("기간 외부유입 (총)",
+                              fmt_krw(float(nav_hist["외부유입_총"].sum())))
+
             with st.expander("📋 일별 데이터 (derived)"):
                 show_h = nav_hist.copy()
                 show_h["날짜"] = pd.to_datetime(show_h["날짜"]).dt.strftime("%Y-%m-%d")
