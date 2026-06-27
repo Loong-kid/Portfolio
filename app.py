@@ -670,15 +670,16 @@ with tab_snap:
                 "종목": st.column_config.TextColumn(width="medium"),
                 "통화": st.column_config.SelectboxColumn(
                     options=["KRW", "USD", "EUR", "JPY"]),
-                "수량": st.column_config.NumberColumn(format="%.6g"),
+                "수량": st.column_config.NumberColumn(format="localized",
+                    help="주식은 주수, 현금/연금은 보유 금액 (천단위 쉼표)"),
                 "평균단가": st.column_config.NumberColumn(format="%.6g",
                     help="현금/연금은 1"),
                 "현재가": st.column_config.NumberColumn(format="%.6g",
                     help="그 시점 현지통화 가격. 현금/연금은 1"),
                 "환율": st.column_config.NumberColumn(format="%.4g",
                     help="1통화→KRW. KRW면 1"),
-                "평가액": st.column_config.NumberColumn(format="%.0f",
-                    help="원화 평가액. 비어두면 수량×현재가×환율로 자동계산"),
+                "평가액": st.column_config.NumberColumn(format="%,d",
+                    help="원화 평가액 (천단위 쉼표). 비어두면 수량×현재가×환율로 자동계산"),
             },
         )
 
@@ -715,7 +716,7 @@ with tab_snap:
         sd_c1, sd_c2 = st.columns([2, 3])
         with sd_c1:
             mode = st.radio("모드", ["기존 스냅샷 편집", "새 스냅샷 추가"],
-                             horizontal=True, key="snap_mode")
+                             horizontal=True, index=1, key="snap_mode")
         if mode == "기존 스냅샷 편집":
             with sd_c2:
                 edit_date = st.selectbox(
@@ -931,8 +932,8 @@ with tab_flows:
                 "날짜": st.column_config.TextColumn(width="small"),
                 "통화": st.column_config.SelectboxColumn(
                     options=["KRW", "USD", "EUR", "JPY"]),
-                "금액": st.column_config.NumberColumn(format="%.2f",
-                    help="+ 유입, − 유출"),
+                "금액": st.column_config.NumberColumn(format="localized",
+                    help="+ 유입, − 유출 (천단위 쉼표)"),
                 "메모": st.column_config.TextColumn(width="large"),
             },
         )
