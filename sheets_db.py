@@ -30,8 +30,37 @@ SCHEMAS: dict[str, list[str]] = {
 }
 
 _cache: dict[str, tuple[float, pd.DataFrame]] = {}
+_ws_cache: dict[str, object] = {}   # tab name → gspread Worksheet handle
 _client_singleton = None
 _sheet_singleton = None
+
+
+def _with_retry(fn, *, tries: int = 4, base: float = 1.0):
+    """Call fn(), retrying on 429 (rate-limit) with exponential backoff.
+
+    두 앱이 같은 Google Cloud 프로젝트 할당량을 공유하므로 일시적 429가
+    날 수 있다. 백오프로 타고 넘겨서 에러 루프(캐시 미적재 → rerun → 재호출)를
+    끊는다.
+    """
+    import gspread
+    for i in range(tries):
+        try:
+            return fn()
+        except gspread.exceptions.APIError as e:
+            msg = str(e)
+            status = getattr(getattr(e, "response", None), "status_code", None)
+            is_rate = (status == 429 or "429" in msg
+                       or "RESOURCE_EXHAUSTED" in msg or "Quota exceeded" in msg)
+            if is_rate and i < tries - 1:
+                time.sleep(base * (2 ** i))
+                continue
+            raise
+
+
+def _populate_ws_cache(sh) -> None:
+    """단일 worksheets() 호출로 모든 탭 핸들을 캐시 (탭당 metadata fetch 방지)."""
+    for ws in sh.worksheets():
+        _ws_cache[ws.title] = ws
 
 
 def _get_client():
@@ -76,18 +105,26 @@ def _get_sheet():
 
 
 def _get_ws(tab_name: str, headers: list[str] | None = None):
-    """Return worksheet, creating with headers if missing."""
+    """Return worksheet handle (cached), creating it only if truly missing.
+
+    캐시 적중 시 API 호출 0. 미스 시 worksheets() 1회로 전체 탭 핸들을 채운다.
+    진짜 없는 탭만 생성 — 429를 '탭 없음'으로 오인해 add_worksheet 하지 않는다.
+    """
+    if tab_name in _ws_cache:
+        return _ws_cache[tab_name]
     sh = _get_sheet()
-    try:
-        return sh.worksheet(tab_name)
-    except Exception:
-        cols = max(len(headers or []), 10)
-        ws = sh.add_worksheet(tab_name, rows=200, cols=cols)
-        if headers:
-            ws.update(values=[headers], range_name="A1",
-                      value_input_option="USER_ENTERED")
-            ws.freeze(rows=1)
-        return ws
+    _with_retry(lambda: _populate_ws_cache(sh))
+    if tab_name in _ws_cache:
+        return _ws_cache[tab_name]
+    # 정말로 없는 탭 → 생성
+    cols = max(len(headers or []), 10)
+    ws = _with_retry(lambda: sh.add_worksheet(tab_name, rows=200, cols=cols))
+    if headers:
+        ws.update(values=[headers], range_name="A1",
+                  value_input_option="USER_ENTERED")
+        ws.freeze(rows=1)
+    _ws_cache[tab_name] = ws
+    return ws
 
 
 def _format_val(v) -> str:
@@ -108,7 +145,7 @@ def read_tab(tab_name: str, *, no_cache: bool = False) -> pd.DataFrame:
         if now - ts < CACHE_TTL:
             return df.copy()
     ws = _get_ws(tab_name, headers=headers)
-    rows = ws.get_all_values()
+    rows = _with_retry(lambda: ws.get_all_values())
     if not rows:
         df = pd.DataFrame(columns=headers or [])
     else:
@@ -144,7 +181,7 @@ def write_tab(tab_name: str, df: pd.DataFrame) -> None:
 def append_row(tab_name: str, row: dict) -> None:
     headers = SCHEMAS.get(tab_name)
     ws = _get_ws(tab_name, headers=headers)
-    existing_headers = ws.row_values(1)
+    existing_headers = _with_retry(lambda: ws.row_values(1))
     if not existing_headers and headers:
         ws.update(values=[headers], range_name="A1",
                   value_input_option="USER_ENTERED")
@@ -169,6 +206,7 @@ def delete_tab(tab_name: str) -> str:
     except Exception:
         return "not found"
     sh.del_worksheet(ws)
+    _ws_cache.pop(tab_name, None)
     invalidate_cache(tab_name)
     return "deleted"
 
@@ -182,7 +220,7 @@ def ensure_all_tabs() -> dict:
     out = {}
     for tab, headers in SCHEMAS.items():
         ws = _get_ws(tab, headers=headers)
-        existing = ws.row_values(1)
+        existing = _with_retry(lambda ws=ws: ws.row_values(1))
         if not existing:
             ws.update(values=[headers], range_name="A1",
                       value_input_option="USER_ENTERED")
