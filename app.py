@@ -184,8 +184,10 @@ if is_admin:
         if _fallback_snapshot or _fallback_missing:
             _fb_tickers = valued[valued["가격출처"].isin(("snapshot", "missing"))].index.tolist()
             _msg_lines = ["⚠️ 일부 종목 현재가 fetch 실패:"]
-            for _t in _fb_tickers:
+            for _t in list(dict.fromkeys(_fb_tickers)):
                 _src = valued.loc[_t, "가격출처"]
+                if hasattr(_src, "iloc"):   # 중복 인덱스 → Series 방어
+                    _src = _src.iloc[0]
                 _tag = "스냅샷 가격 사용" if _src == "snapshot" else "가격 없음"
                 _msg_lines.append(f"• **{_t}** — {_tag}")
             st.warning("\n\n".join(_msg_lines))

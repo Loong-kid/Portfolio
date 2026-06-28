@@ -178,7 +178,9 @@ def get_snapshot(date_: datetime) -> pd.DataFrame:
         return pd.DataFrame(columns=SNAPSHOT_HEADERS).set_index("종목")
     target = pd.Timestamp(date_).normalize()
     rows = df[df["날짜"].dt.normalize() == target].copy()
-    rows = rows.drop(columns=["날짜"]).set_index("종목")
+    rows = (rows.drop(columns=["날짜"])
+                .drop_duplicates(subset=["종목"], keep="last")
+                .set_index("종목"))
     return rows
 
 
@@ -193,7 +195,9 @@ def get_snapshot_at_or_before(as_of: datetime) -> tuple[datetime, pd.DataFrame] 
         return None
     snap_date = valid["날짜"].max().normalize()
     rows = valid[valid["날짜"].dt.normalize() == snap_date].copy()
-    rows = rows.drop(columns=["날짜"]).set_index("종목")
+    rows = (rows.drop(columns=["날짜"])
+                .drop_duplicates(subset=["종목"], keep="last")
+                .set_index("종목"))
     return snap_date, rows
 
 
@@ -234,6 +238,8 @@ def save_snapshot(date_: datetime, rows: pd.DataFrame) -> dict:
         else:
             df_new[col] = float("nan")
     df_new = df_new[df_new["수량"].abs() > 1e-9]
+    # 같은 종목 중복 행 방지 (마지막 행 유지) — 중복 시 인덱스가 깨져 앱 크래시
+    df_new = df_new.drop_duplicates(subset=["종목"], keep="last")
     df_new["날짜"] = target_str
     df_new = df_new[SNAPSHOT_HEADERS]
 
