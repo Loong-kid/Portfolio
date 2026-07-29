@@ -120,6 +120,37 @@ def fmt_pct(v) -> str:
     return f"{v*100:+.2f}%"
 
 
+def _drawdown_stats(df: pd.DataFrame, col: str) -> dict | None:
+    """MDD(기간 내 최고점 대비 최대 낙폭) + 현재 낙폭(전고점 대비) 계산.
+
+    반환: mdd(≤0), 고점/저점 날짜·값, cur_dd(전고점 대비 현재), 낙폭 시계열.
+    """
+    d = df[["날짜", col]].copy()
+    d[col] = pd.to_numeric(d[col], errors="coerce")
+    d = d[d[col] > 0].dropna(subset=[col]).reset_index(drop=True)
+    if len(d) < 2:
+        return None
+    s = d[col]
+    dd = s / s.cummax() - 1.0                      # 각 시점 고점 대비 낙폭 (≤0)
+    trough_i = int(dd.idxmin())                    # 최대낙폭 저점
+    peak_i = int(s.iloc[:trough_i + 1].idxmax())   # 그 직전 고점
+    peak_all_i = int(s.idxmax())                   # 전고점 (기간 내)
+    cur = float(s.iloc[-1])
+
+    def _dt(i):
+        return pd.Timestamp(d["날짜"].iloc[i]).strftime("%Y-%m-%d")
+
+    return {
+        "mdd": float(dd.min()),
+        "mdd_peak_date": _dt(peak_i), "mdd_peak_val": float(s.iloc[peak_i]),
+        "mdd_trough_date": _dt(trough_i), "mdd_trough_val": float(s.iloc[trough_i]),
+        "cur_dd": cur / float(s.iloc[peak_all_i]) - 1.0,
+        "peak_date": _dt(peak_all_i), "peak_val": float(s.iloc[peak_all_i]),
+        "cur_val": cur,
+        "dd_dates": d["날짜"], "dd_vals": dd,
+    }
+
+
 # ============== SIDEBAR ==============
 with st.sidebar:
     badge = "👑 관리자" if is_admin else "👀 게스트"
@@ -1061,6 +1092,57 @@ with tab_nav:
             pct = (last["순자산"] / first["순자산"] - 1) if first["순자산"] else 0
             m_c3.metric("순자산 증감", fmt_krw(delta), fmt_pct(pct))
             m_c4.metric("스냅샷 수", f"{len(list_snapshot_dates())}")
+
+            # 낙폭 (Drawdown / MDD)
+            dd_net = _drawdown_stats(nav_hist, "순자산")
+            dd_tot = _drawdown_stats(nav_hist, "총자산")
+            if dd_net or dd_tot:
+                st.markdown("##### 📉 낙폭 (Drawdown)")
+                st.caption(
+                    "**MDD** = 선택 기간 내 최고점 대비 최대 낙폭. "
+                    "**현재 낙폭** = 전고점(기간 내 최고) 대비 지금 하락률 "
+                    "(0%면 전고점 갱신 중). 총자산 = 부채 포함 / 순자산 = 부채 제외."
+                )
+                dd_c1, dd_c2, dd_c3, dd_c4 = st.columns(4)
+                if dd_net:
+                    dd_c1.metric(
+                        "MDD (순자산)", fmt_pct(dd_net["mdd"]),
+                        help=f"고점 {dd_net['mdd_peak_date']} {fmt_krw(dd_net['mdd_peak_val'])}"
+                             f" → 저점 {dd_net['mdd_trough_date']} {fmt_krw(dd_net['mdd_trough_val'])}")
+                    dd_c2.metric(
+                        "현재 낙폭 (순자산)", fmt_pct(dd_net["cur_dd"]),
+                        help=f"전고점 {dd_net['peak_date']} {fmt_krw(dd_net['peak_val'])}"
+                             f" → 현재 {fmt_krw(dd_net['cur_val'])}")
+                if dd_tot:
+                    dd_c3.metric(
+                        "MDD (총자산)", fmt_pct(dd_tot["mdd"]),
+                        help=f"고점 {dd_tot['mdd_peak_date']} {fmt_krw(dd_tot['mdd_peak_val'])}"
+                             f" → 저점 {dd_tot['mdd_trough_date']} {fmt_krw(dd_tot['mdd_trough_val'])}")
+                    dd_c4.metric(
+                        "현재 낙폭 (총자산)", fmt_pct(dd_tot["cur_dd"]),
+                        help=f"전고점 {dd_tot['peak_date']} {fmt_krw(dd_tot['peak_val'])}"
+                             f" → 현재 {fmt_krw(dd_tot['cur_val'])}")
+
+                fig_dd = go.Figure()
+                if dd_net:
+                    fig_dd.add_trace(go.Scatter(
+                        x=dd_net["dd_dates"], y=dd_net["dd_vals"] * 100,
+                        mode="lines", name="순자산 낙폭",
+                        line=dict(color="#2E86AB", width=2),
+                        fill="tozeroy", fillcolor="rgba(46,134,171,0.12)"))
+                if dd_tot:
+                    fig_dd.add_trace(go.Scatter(
+                        x=dd_tot["dd_dates"], y=dd_tot["dd_vals"] * 100,
+                        mode="lines", name="총자산 낙폭",
+                        line=dict(color="#A23B72", width=1.5, dash="dash")))
+                fig_dd.update_layout(
+                    height=240, yaxis_title="낙폭 (%)", xaxis_title="",
+                    hovermode="x unified",
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02,
+                                  xanchor="right", x=1),
+                    margin=dict(t=30, b=10, l=10, r=10))
+                fig_dd.update_yaxes(ticksuffix="%", rangemode="tozero")
+                st.plotly_chart(fig_dd, use_container_width=True)
 
             # 기준가 (TWR)
             unit_view = nav_hist[nav_hist["기준가_총자산"] > 0].copy()
