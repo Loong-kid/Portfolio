@@ -1,0 +1,55 @@
+name: daily-snapshot
+
+# 매일 자동 스냅샷. UTC 16:07 월~금 = KST 01:07 화~토 (미국장 개장 1.5~2.5시간 후).
+# 날짜 라벨은 미국 거래일(UTC 날짜). 상세는 scripts/auto_snapshot.py 참고.
+on:
+  schedule:
+    - cron: "7 16 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      date:
+        description: "라벨 날짜 YYYY-MM-DD (비우면 오늘 UTC 날짜)"
+        required: false
+      dry_run:
+        description: "시트에 저장하지 않고 결과만 출력"
+        type: boolean
+        default: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      max-parallel: 1   # 두 앱이 Sheets API 할당량 공유
+      matrix:
+        include:
+          - name: 도일
+            sheet_secret: SHEET_ID_DOIL
+          - name: Hee
+            sheet_secret: SHEET_ID_HEE
+    name: snapshot (${{ matrix.name }})
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: scripts/requirements-snapshot.txt
+      - run: pip install -r scripts/requirements-snapshot.txt
+      - name: Write service account key
+        env:
+          SA_JSON: ${{ secrets.GCP_SA_JSON }}
+        run: printf '%s' "$SA_JSON" > "$RUNNER_TEMP/sa.json"
+      - name: Take snapshot
+        env:
+          GOOGLE_SA_JSON: ${{ runner.temp }}/sa.json
+          GOOGLE_SHEET_ID: ${{ secrets[matrix.sheet_secret] }}
+          PORTFOLIO_NAME: ${{ matrix.name }}
+          IN_DATE: ${{ inputs.date }}
+          IN_DRY: ${{ inputs.dry_run }}
+        run: |
+          args=()
+          [ -n "$IN_DATE" ] && args+=(--date "$IN_DATE")
+          [ "$IN_DRY" = "true" ] && args+=(--dry-run)
+          python scripts/auto_snapshot.py "${args[@]}"

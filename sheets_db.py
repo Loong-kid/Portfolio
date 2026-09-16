@@ -172,10 +172,23 @@ def write_tab(tab_name: str, df: pd.DataFrame) -> None:
         df = df[headers]
     cols = list(df.columns)
     body = [[_format_val(v) for v in row] for row in df.values.tolist()]
-    ws.clear()
-    ws.update(values=[cols] + body, range_name="A1",
-              value_input_option="USER_ENTERED")
+    values = [cols] + body
+    # 덮어쓰기 먼저, 남는 꼬리 행은 나중에 지움.
+    # (clear → update 순서면 update 실패 시 탭이 통째로 비어버림)
+    _with_retry(lambda: ws.update(values=values, range_name="A1",
+                                  value_input_option="USER_ENTERED"))
+    last_col = _col_letter(len(cols))
+    try:
+        _with_retry(lambda: ws.batch_clear([f"A{len(values) + 1}:{last_col}"]))
+    except Exception:
+        pass  # 꼬리 행이 그리드 밖이면(=지울 게 없음) 무시
     invalidate_cache(tab_name)
+
+
+def _col_letter(n: int) -> str:
+    """1-based column index → A1 column letters."""
+    from gspread.utils import rowcol_to_a1
+    return rowcol_to_a1(1, n).rstrip("0123456789")
 
 
 def append_row(tab_name: str, row: dict) -> None:

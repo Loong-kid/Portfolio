@@ -1,0 +1,8 @@
+pandas>=2.0
+numpy>=1.26
+python-dotenv>=1.0
+yfinance>=0.2.40
+pykrx>=1.0.45
+gspread>=6.0
+google-auth>=2.28
+tzdata>=2024.1
