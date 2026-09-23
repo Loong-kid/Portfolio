@@ -1,0 +1,29 @@
+name: telegram-pair
+on:
+  workflow_dispatch:
+    inputs:
+      public_key:
+        description: Repository Actions secrets public key (not a secret)
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: telegram-pair
+  cancel-in-progress: false
+jobs:
+  pair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install PyNaCl==1.5.0
+      - name: Pair private recipient
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_PAIR_CODE: ${{ secrets.TELEGRAM_PAIR_CODE }}
+          TELEGRAM_PAIR_EXPIRES: ${{ secrets.TELEGRAM_PAIR_EXPIRES }}
+          REPO_PUBLIC_KEY: ${{ inputs.public_key }}
+        run: python scripts/telegram_pair.py
