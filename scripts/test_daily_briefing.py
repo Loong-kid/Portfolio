@@ -95,6 +95,30 @@ class BriefingTests(unittest.TestCase):
             send.assert_not_called()
             self.assertFalse(path.exists())
 
+    def test_filings_only_includes_all_filings_without_news(self):
+        records=[(f'Official filing {i}',[f'filing-{i}']) for i in range(5)]
+        self.collect.return_value=(records,[],[],[])
+        with tempfile.TemporaryDirectory() as folder:
+            path=Path(folder)/'state.json'
+            # A legacy/news-only delivery must not prevent the new filing test.
+            b.save_state(path,{'sent':{},'days':[datetime.now(b.KST).date().isoformat()]})
+            with patch('sys.argv',['daily_briefing.py','--filings-only','--state',str(path)]), patch.object(b,'read_holdings',return_value=(date.today(),[('A','ARM')])), patch.object(b,'fetch_news') as news, patch.object(b,'send') as send, patch.object(b.time,'sleep'):
+                b.main()
+            news.assert_not_called()
+            self.assertEqual(sum('Official filing' in c.args[0] for c in send.call_args_list),5)
+            self.assertTrue(all(f'filing-{i}' in b.load_state(path)['sent'] for i in range(5)))
+
+    def test_filing_failure_still_sends_news_and_marks_run_incomplete(self):
+        self.collect.return_value=([],['A: SEC HTTP 403'],[],[])
+        article={'id':'article','title_id':'title','title':'A report','source':'Source','link':'https://example.com/a','published':datetime.now(timezone.utc)}
+        with tempfile.TemporaryDirectory() as folder:
+            path=Path(folder)/'state.json'
+            with patch('sys.argv',['daily_briefing.py','--state',str(path)]), patch.object(b,'read_holdings',return_value=(date.today(),[('A','ARM')])), patch.object(b,'fetch_news',return_value=[article]), patch.object(b,'send') as send, patch.object(b.time,'sleep'):
+                with self.assertRaises(RuntimeError): b.main()
+            self.assertIn('article',b.load_state(path)['sent'])
+            self.assertEqual(b.load_state(path)['days'],[])
+            self.assertTrue(any('공시 확인 실패' in c.args[0] for c in send.call_args_list))
+
 
 if __name__ == '__main__':
     unittest.main()
