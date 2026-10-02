@@ -8,7 +8,7 @@ on:
       mode:
         description: Preview, test message, or deliver today's digest
         type: choice
-        options: [preview, test, send]
+        options: [preview, test, send, filings-preview, filings-send]
         default: preview
 permissions:
   contents: read
@@ -47,14 +47,19 @@ jobs:
           GOOGLE_SHEET_ID: ${{ secrets.SHEET_ID_DOIL }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          DART_API_KEY: ${{ secrets.DART_API_KEY }}
+          SEC_USER_AGENT: ${{ vars.SEC_USER_AGENT }}
+          SEC_CIK_OVERRIDES: ${{ vars.SEC_CIK_OVERRIDES }}
           MODE: ${{ inputs.mode }}
         run: |
           args=()
           [ "$MODE" = preview ] && args+=(--dry-run)
           [ "$MODE" = test ] && args+=(--test)
+          [ "$MODE" = filings-preview ] && args+=(--filings-only --dry-run)
+          [ "$MODE" = filings-send ] && args+=(--filings-only)
           python scripts/daily_briefing.py "${args[@]}"
       - name: Persist delivery receipts, including partial deliveries
-        if: always() && (github.event_name == 'schedule' || inputs.mode == 'send')
+        if: always() && (github.event_name == 'schedule' || inputs.mode == 'send' || inputs.mode == 'filings-send')
         uses: actions/cache/save@v4
         with:
           path: .briefing-state

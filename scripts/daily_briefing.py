@@ -19,6 +19,7 @@ from email.utils import parsedate_to_datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 from telegram_client import send
+from filings import collect_filings
 
 KST = ZoneInfo('Asia/Seoul')
 EXCLUDED = {'KRW현금', 'USD현금', 'EUR현금', 'JPY현금', '개인연금', '퇴직연금'}
@@ -166,6 +167,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--dry-run', action='store_true')
     parser.add_argument('--test', action='store_true')
+    parser.add_argument('--filings-only', action='store_true')
     parser.add_argument('--state', default='.briefing-state/state.json')
     args = parser.parse_args()
     if args.test:
@@ -175,19 +177,23 @@ def main():
     now = datetime.now(timezone.utc)
     local_now = now.astimezone(KST)
     day = local_now.date().isoformat()
+    completion_key = day + ':filings' if args.filings_only else day
     path = Path(args.state)
     state = load_state(path)
     state['sent'] = {key: value for key, value in state['sent'].items() if value > now.timestamp()-14*86400}
     state['days'] = state['days'][-14:]
-    if day in state['days'] and not args.dry_run:
+    if completion_key in state['days'] and not args.dry_run:
         print('Already delivered for this KST date')
         return
     snapshot, holdings = read_holdings(now)
     # Overlap handles modest feed indexing delays; receipts remove repeat URLs/titles.
     since = now - timedelta(hours=36)
+    filing_start = local_now.date() - timedelta(days=6)
+    filing_sections, filing_failures, filing_empty, filing_unsupported = collect_filings(
+        holdings, filing_start, local_now.date(), state['sent'])
     sections, failures, empty = [], [], []
     candidate_ids = set(state['sent'])
-    for name, symbol in holdings:
+    for name, symbol in ([] if args.filings_only else holdings):
         try:
             articles = choose_articles(fetch_news(name, symbol, since, now), candidate_ids)
         except RuntimeError:
@@ -207,21 +213,33 @@ def main():
     header = (f'🗞 포트폴리오 아침 브리핑 | {local_now:%Y-%m-%d}\n'
               f'보유 기준: {snapshot} · 주식 {len(holdings)}종목\n'
               f'뉴스 범위: {since.astimezone(KST):%m/%d %H:%M} ~ {local_now:%m/%d %H:%M} KST\n'
-              '뉴스 제목 모음 · Google News 검색 · 전문 요약/투자 해석은 포함하지 않습니다.')
+              f'공시 범위: {filing_start} ~ {local_now.date()} (접수일 기준 7일)\n'
+              'Google News + DART·SEC 공시 목록 · 전문 요약/투자 해석은 포함하지 않습니다.')
+    if args.filings_only:
+        header = (f'📄 포트폴리오 공시 브리핑 | {local_now:%Y-%m-%d}\n'
+                  f'보유 기준: {snapshot}\n공시 범위: {filing_start} ~ {local_now.date()}\n'
+                  'DART·SEC 공식 접수 목록 · 중복 제외 · 원문 요약 아님')
     if (local_now.date()-snapshot).days > 3:
         header += '\n⚠ 보유 스냅샷이 3일 이상 지났습니다. 최신 보유 내역인지 확인해 주세요.'
     footer = []
+    if filing_empty:
+        footer.append('새 공시 없음(조회 범위 내·중복 제외): ' + ', '.join(filing_empty))
+    if filing_unsupported:
+        footer.append('SEC 매핑 미설정(미국 외 거래소): ' + ', '.join(filing_unsupported)
+                      + '\n해당 기업의 공시가 없다는 뜻은 아니며, 별도 CIK 또는 현지 공시 연결이 필요합니다.')
+    if filing_failures:
+        footer.append('⚠ 공시 확인 실패: ' + '; '.join(filing_failures))
     if empty:
         footer.append('새 검색 결과 없음(수집 범위 내·중복 제외): ' + ', '.join(empty))
     if failures:
         footer.append('⚠ 수집 실패: ' + ', '.join(failures) + '\n이 종목들은 소식 유무를 확인하지 못했습니다.')
     if not holdings:
         footer.append('현재 뉴스 대상 주식이 없습니다.')
-    blocks = [(header, [])] + sections + [('\n'.join(footer), [])]
+    blocks = [(header, [])] + filing_sections + sections + [('\n'.join(footer), [])]
     if args.dry_run:
         # Public Actions logs must not reveal holdings or personalized text.
-        print(f'Preview validated: holdings={len(holdings)}, sections={len(sections)}, feeds_failed={len(failures)}')
-        if failures:
+        print(f'Preview validated: holdings={len(holdings)}, sections={len(sections)}, feeds_failed={len(failures)}, filings={len(filing_sections)}, filing_failures={len(filing_failures)}, sec_unmapped={len(filing_unsupported)}')
+        if failures or filing_failures:
             raise RuntimeError('One or more news feeds failed')
         return
     for text, ids in blocks:
@@ -238,11 +256,13 @@ def main():
         for article_id in ids:
             state['sent'][article_id] = now.timestamp()
         save_state(path, state)
-    if not failures:
-        state['days'].append(day)
+    if not failures and not filing_failures:
+        state['days'].append(completion_key)
+        if not args.filings_only:
+            state['days'].append(day + ':filings')
     save_state(path, state)
-    print(f'Delivery accepted: sections={len(sections)}, feeds_failed={len(failures)}')
-    if failures:
+    print(f'Delivery accepted: sections={len(sections)}, feeds_failed={len(failures)}, filings={len(filing_sections)}, filing_failures={len(filing_failures)}')
+    if failures or filing_failures:
         raise RuntimeError('Partial briefing delivered; one or more feeds failed')
 
 

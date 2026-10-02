@@ -11,6 +11,11 @@ import telegram_client as t
 
 
 class BriefingTests(unittest.TestCase):
+    def setUp(self):
+        patcher = patch.object(b, 'collect_filings', return_value=([], [], [], []))
+        self.collect = patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_latest_whole_snapshot_excludes_sold_cash_and_future(self):
         rows = [
             {'날짜':'2026-09-22', '종목':'Sold', '수량':'3'},
