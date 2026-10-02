@@ -63,6 +63,7 @@ class Dart:
         if not self.key:
             raise FilingError('DART 인증키 미설정')
         self.codes = None
+        self.code_error = None
 
     def url(self, endpoint, **params):
         return 'https://opendart.fss.or.kr/api/' + endpoint + '?' + urllib.parse.urlencode(
@@ -72,6 +73,8 @@ class Dart:
         stock = symbol.split('.')[0]
         if not re.fullmatch(r'\d{6}', stock):
             raise FilingError('DART 종목코드 매핑 필요')
+        if self.code_error:
+            raise self.code_error
         if self.codes is None:
             try:
                 raw = download(self.url('corpCode.xml'), 'DART')
@@ -82,10 +85,12 @@ class Dart:
                     root = ET.fromstring(archive.read(member))
                 self.codes = {r.findtext('stock_code', '').strip(): r.findtext('corp_code', '').strip()
                               for r in root.findall('list') if r.findtext('stock_code', '').strip()}
-            except FilingError:
+            except FilingError as error:
+                self.code_error = error
                 raise
             except Exception:
-                raise FilingError('DART 회사코드 조회 실패') from None
+                self.code_error = FilingError('DART 회사코드 조회 실패')
+                raise self.code_error from None
         code = self.codes.get(stock)
         if not code or not re.fullmatch(r'\d{8}', code):
             raise FilingError('DART 회사코드 매핑 없음')
@@ -127,6 +132,7 @@ class Dart:
 class Sec:
     def __init__(self):
         self.tickers = None
+        self.mapping_error = None
         try:
             self.overrides = json.loads(os.environ.get('SEC_CIK_OVERRIDES') or '{}')
             if not isinstance(self.overrides, dict) or any(not re.fullmatch(r'\d{1,10}',str(v)) for v in self.overrides.values()):
@@ -140,12 +146,18 @@ class Sec:
         # Foreign-exchange suffixes cannot be equated to a US issuer automatically.
         if not re.fullmatch(r'[A-Za-z][A-Za-z0-9-]{0,9}', symbol):
             return None
+        if self.mapping_error:
+            raise self.mapping_error
         if self.tickers is None:
-            data = get_json('https://www.sec.gov/files/company_tickers.json', 'SEC')
             try:
+                data = get_json('https://www.sec.gov/files/company_tickers.json', 'SEC')
                 self.tickers = {r['ticker'].upper(): str(int(r['cik_str'])).zfill(10) for r in data.values()}
+            except FilingError as error:
+                self.mapping_error = error
+                raise
             except (KeyError, TypeError, ValueError):
-                raise FilingError('SEC 종목 매핑 형식 오류') from None
+                self.mapping_error = FilingError('SEC 종목 매핑 형식 오류')
+                raise self.mapping_error from None
         code = self.tickers.get(symbol.upper())
         if not code:
             raise FilingError('SEC 종목 매핑 없음; CIK 확인 필요')

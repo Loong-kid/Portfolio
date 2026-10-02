@@ -239,6 +239,8 @@ def main():
     if args.dry_run:
         # Public Actions logs must not reveal holdings or personalized text.
         print(f'Preview validated: holdings={len(holdings)}, sections={len(sections)}, feeds_failed={len(failures)}, filings={len(filing_sections)}, filing_failures={len(filing_failures)}, sec_unmapped={len(filing_unsupported)}')
+        if filing_failures:
+            print('Filing diagnostics: ' + '; '.join(sorted({s.split(': ',1)[-1] for s in filing_failures})))
         if failures or filing_failures:
             raise RuntimeError('One or more news feeds failed')
         return
