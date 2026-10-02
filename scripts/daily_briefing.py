@@ -225,8 +225,8 @@ def main():
     if filing_empty:
         footer.append('새 공시 없음(조회 범위 내·중복 제외): ' + ', '.join(filing_empty))
     if filing_unsupported:
-        footer.append('SEC 매핑 미설정(미국 외 거래소): ' + ', '.join(filing_unsupported)
-                      + '\n해당 기업의 공시가 없다는 뜻은 아니며, 별도 CIK 또는 현지 공시 연결이 필요합니다.')
+        footer.append('공시 조회 보류/미연결: ' + ', '.join(filing_unsupported)
+                      + '\n해당 기업의 공시가 없다는 뜻은 아닙니다.')
     if filing_failures:
         footer.append('⚠ 공시 확인 실패: ' + '; '.join(filing_failures))
     if empty:

@@ -22,7 +22,7 @@ def sec_rows(accessions=None, days=None, forms=None):
 
 class FilingTests(unittest.TestCase):
     def setUp(self):
-        env=patch.dict(os.environ, {'DART_API_KEY':'test-key','SEC_CIK_OVERRIDES':'{}'})
+        env=patch.dict(os.environ, {'DART_API_KEY':'test-key','SEC_CIK_OVERRIDES':'{}','SEC_ENABLED':'true'})
         env.start(); self.addCleanup(env.stop)
 
     def dart(self):
@@ -108,7 +108,14 @@ class FilingTests(unittest.TestCase):
             sections,failures,empty,unmapped=f.collect_filings([('Korean','005930.KS'),('US','ARM'),('German','AIXA.DE')],START,END,{})
         self.assertEqual(len(failures),1)
         self.assertEqual(empty,['US(SEC)'])
-        self.assertEqual(unmapped,['German'])
+        self.assertEqual(unmapped,['German (SEC 매핑 미설정·미국 외 거래소)'])
+
+    def test_sec_paused_never_initializes_or_calls_sec(self):
+        with patch.dict(os.environ, {'SEC_ENABLED':'false'}), patch.object(f,'Sec') as sec:
+            sections,failures,empty,unmapped=f.collect_filings([('US','ARM')],START,END,{})
+        sec.assert_not_called()
+        self.assertEqual((sections,failures,empty),([],[],[]))
+        self.assertEqual(unmapped,['US (SEC 조회 보류)'])
 
     def test_download_error_cannot_leak_key(self):
         url='https://opendart.fss.or.kr/api/list.json?crtfc_key=private-key'

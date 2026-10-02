@@ -218,6 +218,9 @@ def collect_filings(holdings, start, end, sent):
         if not symbol:
             failures.append(f'{name}: 공시용 종목코드 미설정')
             continue
+        if not domestic and os.environ.get('SEC_ENABLED', '').lower() != 'true':
+            unsupported.append(f'{name} (SEC 조회 보류)')
+            continue
         try:
             if source not in clients:
                 try:
@@ -229,7 +232,7 @@ def collect_filings(holdings, start, end, sent):
                 raise client
             records=client.fetch(symbol,start,end)
             if records is None:
-                unsupported.append(name)
+                unsupported.append(f'{name} (SEC 매핑 미설정·미국 외 거래소)')
                 continue
             selected=[]
             for row in sorted(records,key=lambda r:(r['date'],r['id']),reverse=True):

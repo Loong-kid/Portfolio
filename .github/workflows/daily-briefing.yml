@@ -48,6 +48,7 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           DART_API_KEY: ${{ secrets.DART_API_KEY }}
+          SEC_ENABLED: ${{ vars.SEC_ENABLED }}
           SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT || vars.SEC_USER_AGENT }}
           SEC_CIK_OVERRIDES: ${{ secrets.SEC_CIK_OVERRIDES || vars.SEC_CIK_OVERRIDES }}
           MODE: ${{ inputs.mode }}
