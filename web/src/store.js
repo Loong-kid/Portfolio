@@ -6,6 +6,7 @@
 import { readTabs } from "./google.js";
 import * as C from "./calc.js";
 import * as X from "./prices.js";
+import { refreshFundamentals } from "./fundamentals.js";
 
 export const VIEW_TABS = ["snapshots", "flows", "debt_history", "nav_anchors", "stock_notes", "watchlist", "categories", "ticker_map", "portfolio_order"];
 const SHEET_FRESH_MS = 60 * 1000;
@@ -152,5 +153,11 @@ export async function refreshPrices(env, opts = {}) {
   }
   if (done) { H.at = Date.now(); await kvPut(env, "px:hist", H); }
   log.push(`이력 ${done}/${jobs.length} 갱신, 남은 호출 ${budget.left}`);
+
+  // 5) 재무 (종목 분석 카드): 20시간 지난 종목을 오래된 순으로 몇 개씩
+  if (budget.left >= 8) {
+    try { log.push(await refreshFundamentals(env, [...cur], budget, 3)); }
+    catch (e) { log.push(`재무 실패: ${String(e).slice(0, 80)}`); }
+  }
   return log;
 }

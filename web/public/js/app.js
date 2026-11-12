@@ -1,6 +1,7 @@
 import { lineChart, barList, donut } from "./charts.js";
 import { esc, isNum, store, fmt, signCls, api } from "./util.js";
 import { renderSnapshots, renderFlows, renderSettings, notesEditor, watchlistEditor, orderEditor } from "./edit.js";
+import { renderValuation } from "./valuation.js";
 
 // ---------- 공통 ----------
 const $app = document.getElementById("app");
@@ -43,7 +44,7 @@ async function showLogin(msg = "") {
 }
 
 // ---------- 뼈대 ----------
-const TABS_ADMIN = [["port", "현재 포트폴리오"], ["snap", "스냅샷"], ["flows", "자금 흐름"], ["nav", "자산 추이"], ["notes", "종목 메모"], ["settings", "설정"]];
+const TABS_ADMIN = [["port", "현재 포트폴리오"], ["snap", "스냅샷"], ["flows", "자금 흐름"], ["nav", "자산 추이"], ["notes", "종목 메모"], ["val", "종목 분석"], ["settings", "설정"]];
 const TABS_GUEST = [["port", "현재 포트폴리오"], ["notes", "종목 메모"]];
 
 function shell() {
@@ -75,7 +76,7 @@ function shell() {
   });
 }
 
-const EDIT_TABS = new Set(["snap", "flows", "settings"]);
+const EDIT_TABS = new Set(["snap", "flows", "settings", "val"]);
 
 async function loadData(silent = false) {
   const d = await api("/api/portfolio");
@@ -137,6 +138,7 @@ function renderView() {
   else if (S.tab === "snap") renderSnapshots(v, ctx);
   else if (S.tab === "flows") renderFlows(v, ctx);
   else if (S.tab === "settings") renderSettings(v, ctx);
+  else if (S.tab === "val") renderValuation(v);
 }
 
 const isCash = (r) => r.평균단가 == null && !isNum(r.수익률);

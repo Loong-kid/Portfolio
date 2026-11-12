@@ -10,7 +10,7 @@ export class Budget {
   take() { if (this.left <= 0) throw new Error("바깥 호출 한도 소진"); this.left--; }
 }
 
-async function getJson(url, budget) {
+export async function getJson(url, budget) {
   budget.take();
   const r = await fetch(url, { headers: UA });
   const t = await r.text();

@@ -462,3 +462,32 @@ code { background: var(--surface-2); padding: 1px 6px; border-radius: 6px; font-
 }
 .login h1 { display: flex; align-items: center; gap: 12px; }
 .login h1 .mark { width: 30px; height: 30px; border-radius: 9px; }
+
+/* ---------- 종목 분석 ---------- */
+.val-pick { display: grid; gap: 8px; margin-top: 4px; }
+.pick-row { display: flex; gap: 10px; align-items: flex-start; }
+.pick-label { font-size: 12px; color: var(--text-3); letter-spacing: 0.03em; padding-top: 7px; min-width: 28px; }
+.chip[aria-pressed="true"] { background: var(--m-primary); color: #fff; }
+.val-head { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; }
+.val-grid { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 24px; align-items: start; }
+@media (max-width: 980px) { .val-grid { grid-template-columns: 1fr; } }
+.val-form .form-grid .field { flex: 1 1 100px; }
+.val-form textarea { width: 100%; border: 1px solid var(--line-strong); border-radius: 8px; padding: 8px 10px; background: var(--surface); resize: vertical; font-family: inherit; line-height: 1.45; }
+.val-form textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
+.val-form input.invalid { outline: 2px solid var(--up); }
+.table-wrap.flat { box-shadow: none; }
+.table-wrap.edit input::placeholder { color: var(--text-3); opacity: .75; font-size: 12px; }
+.metric .label small { font-weight: 400; color: var(--text-3); }
+tr.row-c td { color: var(--text-2); }
+tr.row-m td { background: var(--surface-2); }
+tr.row-m td.sticky { background: var(--surface-2); }
+table.gtable th .th-sub { font-size: 11px; font-weight: 400; color: var(--text-3); letter-spacing: 0; margin-top: 2px; }
+table.gtable td.col-c, table.gtable th.col-c { background: color-mix(in srgb, var(--surface-2) 55%, var(--surface)); }
+table.gtable td.col-m, table.gtable th.col-m { background: var(--surface-2); }
+table.gtable tr.r-val td { color: var(--text); font-weight: 450; }
+table.gtable tr.r-acc td { border-bottom: 1px solid var(--line-strong); }
+table.gtable td.sticky { color: var(--text-2); font-weight: 450; }
+.g-word { font-size: 12px; color: var(--text-2); background: var(--neutral-tint); padding: 2px 8px; border-radius: var(--pill); }
+td.hl { font-weight: 500; background: var(--surface-2); }
+.val-form .table-wrap.edit input.num { min-width: 78px; }
+.val-form .table-wrap.edit td:first-child { white-space: nowrap; }

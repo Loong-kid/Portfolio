@@ -5,6 +5,7 @@ import { checkPassword, makeCookie, clearCookie, readSession } from "./auth.js";
 import { portfolios, portfolioById, loadSheet, loadSheetFresh, loadPrices, refreshPrices } from "./store.js";
 import { buildPortfolio, buildNav } from "./api_view.js";
 import { handleEdit } from "./api_edit.js";
+import { handleVal } from "./api_val.js";
 
 const json = (data, init = {}) =>
   new Response(JSON.stringify(data), { ...init, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", ...(init.headers || {}) } });
@@ -75,7 +76,7 @@ async function handleApi(req, env, ctx, url) {
   }
 
   try {
-    const out = await handleEdit(req, env, ctx, url, p);
+    const out = (await handleVal(req, env, ctx, url, p)) || (await handleEdit(req, env, ctx, url, p));
     if (out) return json(out);
   } catch (e) {
     if (e.status === 400) return err(400, e.message);

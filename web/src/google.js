@@ -114,3 +114,15 @@ function colLetter(n) {
   while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); }
   return s;
 }
+
+/** 탭이 없으면 만든다 (새 기능용 탭: valuation 등). 만들었으면 true. */
+export async function ensureTab(env, sheetId, tab) {
+  const meta = await gfetch(env, `${API}/${sheetId}?fields=sheets.properties.title`);
+  if (meta.sheets.some((s) => s.properties.title === tab)) return false;
+  await gfetch(env, `${API}/${sheetId}:batchUpdate`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ requests: [{ addSheet: { properties: { title: tab } } }] }),
+  });
+  return true;
+}
