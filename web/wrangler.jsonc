@@ -1,0 +1,19 @@
+{
+  "name": "portfolio-web",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": true,
+  // 화면 파일 (정적 자산은 요청 수 한도에 안 들어감). /api/* 는 Worker 가 먼저 받는다.
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "kv_namespaces": [{ "binding": "KV", "id": "165caef0bd9a4462b1c8e7005a842ad8" }],
+  // 10분마다 시세·환율·이력 갱신
+  "triggers": { "crons": ["*/10 * * * *"] },
+  "observability": { "enabled": true }
+  // 비밀값(wrangler secret): GCP_SA_JSON, ADMIN_PASSWORD_HASH, GUEST_PASSWORD_HASH, SESSION_SECRET, PORTFOLIOS
+  //   포트폴리오별 비밀번호가 다르면 ADMIN_PASSWORD_HASH_HEE 처럼 뒤에 ID 를 붙여 추가
+}

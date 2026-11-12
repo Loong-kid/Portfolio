@@ -1,0 +1,6 @@
+node_modules/
+.wrangler/
+.dev.vars
+# 루트 .gitignore 가 *.json 을 막으므로 웹 설정 파일만 예외 (키 파일은 여기 두지 말 것)
+!package.json
+!package-lock.json
