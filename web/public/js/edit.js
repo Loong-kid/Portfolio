@@ -86,7 +86,7 @@ export function editGrid(container, columns, rows, opts = {}) {
 }
 
 // =====================================================================
-// 📸 스냅샷
+// 스냅샷
 // =====================================================================
 const SNAP_COLS = [
   { key: "종목", label: "종목", type: "text", width: 120 },
@@ -111,7 +111,7 @@ export async function renderSnapshots(v, ctx, state = {}) {
   if (mode === "edit" && editDate && editDate !== date) return renderSnapshots(v, ctx, { mode, date: editDate });
 
   v.innerHTML = `
-    <div class="section"><h2>📸 스냅샷 <span class="sub">진실의 원천 · 같은 날짜의 행들이 한 스냅샷</span></h2>
+    <div class="section"><h2>스냅샷 <span class="sub">진실의 원천 · 같은 날짜의 행들이 한 스냅샷</span></h2>
       <div class="toolbar">
         <div class="seg" role="group"><button data-mode="new" aria-pressed="${mode === "new"}">새 스냅샷</button><button data-mode="edit" aria-pressed="${mode === "edit"}">기존 스냅샷 편집</button></div>
         ${mode === "new"
@@ -119,21 +119,21 @@ export async function renderSnapshots(v, ctx, state = {}) {
           : `<label class="field">날짜 <select id="snapDate">${d.dates.map((x) => `<option value="${x.날짜}" ${x.날짜 === d.date ? "selected" : ""}>${x.날짜} (${x.행수}행)</option>`).join("")}</select></label>`}
       </div>
       <p class="caption">${
-        d.carryFrom ? `💡 가장 최근 스냅샷(${d.carryFrom})에서 수량·평균단가·통화를 가져왔어요. ` : d.exists && mode === "new" ? "⚠️ 이 날짜에 이미 스냅샷이 있어요 — 저장하면 덮어써요. " : ""}${
+        d.carryFrom ? `가장 최근 스냅샷(${d.carryFrom})에서 수량·평균단가·통화를 가져왔어요. ` : d.exists && mode === "new" ? "이 날짜에 이미 스냅샷이 있어요 — 저장하면 덮어써요. " : ""}${
         d.isToday ? "오늘이라 현재가·환율·평가액은 지금 시세로 채웠어요 (10분 캐시)." : "과거 날짜라 그날의 현재가·환율·평가액을 직접 넣어 주세요 (시트에서 직접 고쳐도 돼요)."}</p>
     </div>
     <div id="snapGrid"></div>
     <div class="toolbar" style="margin-top:10px">
-      <button class="btn ghost" id="addRow">＋ 행 추가</button>
+      <button class="btn ghost" id="addRow">+ 행 추가</button>
       <span class="muted" id="snapSum"></span>
     </div>
     <div class="toolbar actions">
-      <button class="btn primary" id="saveSnap">💾 저장</button>
-      <button class="btn" id="refreshSnap" title="수량·평균단가는 표 그대로, 가격·환율만 지금 시세로 받아서 바로 저장">🔄 지금 시세로 갱신 + 저장</button>
-      ${mode === "edit" ? `<button class="btn danger" id="delSnap">🗑️ 이 스냅샷 삭제</button>` : ""}
+      <button class="btn primary" id="saveSnap">저장</button>
+      <button class="btn" id="refreshSnap" title="수량·평균단가는 표 그대로, 가격·환율만 지금 시세로 받아서 바로 저장">지금 시세로 갱신 + 저장</button>
+      ${mode === "edit" ? `<button class="btn danger" id="delSnap">이 스냅샷 삭제</button>` : ""}
     </div>
     <p class="caption">수량 0인 행은 저장할 때 빠져요. 평가액은 수량·현재가·환율을 고치면 자동으로 다시 계산돼요 (직접 덮어써도 돼요).</p>
-    <details class="more"><summary>🗒️ 시트 <code>snapshots</code> 탭 양식 (직접 편집용)</summary>
+    <details class="more"><summary>시트 <code>snapshots</code> 탭 양식 (직접 편집용)</summary>
       <div class="table-wrap" style="margin-top:8px"><table class="data"><thead><tr><th class="l">열</th><th class="l">형식</th><th class="l">비고</th></tr></thead><tbody>
         <tr><td class="l">날짜</td><td class="l">YYYY-MM-DD</td><td class="l">같은 날짜의 모든 행이 한 스냅샷</td></tr>
         <tr><td class="l">종목</td><td class="l">문자</td><td class="l">현금은 KRW현금/USD현금/EUR현금/JPY현금, 연금은 개인연금/퇴직연금</td></tr>
@@ -145,7 +145,7 @@ export async function renderSnapshots(v, ctx, state = {}) {
         <tr><td class="l">평가액</td><td class="l">숫자 (원)</td><td class="l">= 수량 × 현재가 × 환율 (자산 추이가 이 값을 그대로 씀)</td></tr>
       </tbody></table></div>
     </details>
-    <div class="section"><h2>📜 스냅샷 목록 <span class="sub">${d.dates.length}개</span></h2>
+    <div class="section"><h2>스냅샷 목록 <span class="sub">${d.dates.length}개</span></h2>
       <div class="chips">${d.dates.slice(0, 60).map((x) => `<button class="chip" data-go="${x.날짜}">${x.날짜} <small>${x.행수}</small></button>`).join("")}${d.dates.length > 60 ? `<span class="muted">… 외 ${d.dates.length - 60}개</span>` : ""}</div>
     </div>`;
 
@@ -176,25 +176,25 @@ export async function renderSnapshots(v, ctx, state = {}) {
   v.querySelectorAll("[data-go]").forEach((b) => b.addEventListener("click", () => renderSnapshots(v, ctx, { mode: "edit", date: b.dataset.go })));
   v.querySelector("#addRow").addEventListener("click", () => g.add({ 종목: "", 통화: "KRW", 수량: null, 평균단가: null, 현재가: null, 환율: 1, 평가액: null }));
   const bad = g.rows.some((r) => Number.isNaN(r.수량));
-  v.querySelector("#saveSnap").addEventListener("click", (e) => busy(e.currentTarget, "⏳ 저장 중", async () => {
+  v.querySelector("#saveSnap").addEventListener("click", (e) => busy(e.currentTarget, "저장 중…", async () => {
     if (g.rows.some((r) => Object.values(r).some((x) => Number.isNaN(x)))) throw new Error("숫자가 아닌 칸이 있어요 (빨간 칸 확인).");
     const r = await api("/api/snapshots", { method: "PUT", body: JSON.stringify({ date: d.date, rows: g.rows }) });
-    toast(`✅ ${r.date} 저장: ${r.rows}행 · 합계 ${fmt.krw(r.total)}`);
+    toast(`${r.date} 저장: ${r.rows}행 · 합계 ${fmt.krw(r.total)}`);
     await ctx.afterSave();
     renderSnapshots(v, ctx, { mode: "edit", date: r.date });
   }));
-  v.querySelector("#refreshSnap").addEventListener("click", (e) => busy(e.currentTarget, "⏳ 시세 받는 중", async () => {
+  v.querySelector("#refreshSnap").addEventListener("click", (e) => busy(e.currentTarget, "시세 받는 중…", async () => {
     const r = await api("/api/snapshots/refresh", { method: "POST", body: JSON.stringify({ date: d.date, rows: g.rows }) });
-    toast(`✅ ${r.date} 지금 시세로 저장: ${r.rows}행 · 합계 ${fmt.krw(r.total)}`);
-    if (r.missing?.length) toast(`⚠️ 가격을 못 받은 종목: ${r.missing.join(", ")} — 현재가 칸을 직접 채워 주세요`, "err");
+    toast(`${r.date} 지금 시세로 저장: ${r.rows}행 · 합계 ${fmt.krw(r.total)}`);
+    if (r.missing?.length) toast(`가격을 못 받은 종목: ${r.missing.join(", ")} — 현재가 칸을 직접 채워 주세요`, "err");
     await ctx.afterSave();
     renderSnapshots(v, ctx, { mode: "edit", date: r.date });
   }));
   v.querySelector("#delSnap")?.addEventListener("click", (e) => {
     if (!confirm(`${d.date} 스냅샷(${g.rows.length}행)을 시트에서 지울까요?`)) return;
-    busy(e.currentTarget, "⏳ 삭제 중", async () => {
+    busy(e.currentTarget, "삭제 중…", async () => {
       const r = await api(`/api/snapshots?date=${d.date}`, { method: "DELETE" });
-      toast(`🗑️ ${d.date} ${r.removed}행 삭제`);
+      toast(`${d.date} ${r.removed}행 삭제`);
       await ctx.afterSave();
       renderSnapshots(v, ctx, { mode: "edit" });
     });
@@ -203,7 +203,7 @@ export async function renderSnapshots(v, ctx, state = {}) {
 }
 
 // =====================================================================
-// 💸 외부 자금 흐름 + 부채
+// 외부 자금 흐름 + 부채
 // =====================================================================
 export async function renderFlows(v, ctx) {
   const tok = v.dataset.tok;
@@ -213,26 +213,26 @@ export async function renderFlows(v, ctx) {
   if (v.dataset.tok !== tok) return; // 그새 다른 탭으로 감
   const lastDebt = d.debt.length ? d.debt[d.debt.length - 1].부채 : 0;
   v.innerHTML = `
-    <div class="section"><h2>💸 외부 자금 흐름 <span class="sub">밖에서 들어오거나 나간 돈만 (급여·송금·대출 입금/상환). 이자·배당·매매 차익은 스냅샷에 저절로 잡혀요</span></h2>
+    <div class="section"><h2>외부 자금 흐름 <span class="sub">밖에서 들어오거나 나간 돈만 (급여·송금·대출 입금/상환). 이자·배당·매매 차익은 스냅샷에 저절로 잡혀요</span></h2>
       <form class="card form-grid" id="flowForm">
         <label class="field">날짜<input type="date" name="날짜" value="${todayKst()}" required></label>
         <label class="field">통화<select name="통화">${CCYS.map((c) => `<option>${c}</option>`).join("")}</select></label>
         <label class="field">금액 <small>+ 유입 · − 유출</small><input name="금액" inputmode="decimal" placeholder="예: 1,000,000 또는 -500,000" required></label>
         <label class="field grow">메모<input name="메모" placeholder="예: 11월 급여 / 대출 입금"></label>
-        <button class="btn primary" type="submit">＋ 추가</button>
+        <button class="btn primary" type="submit">+ 추가</button>
       </form>
       <p class="caption">주말에 적어도 돼요 — 좌수 계산에는 다음 영업일(월요일)에 반영돼요.</p>
     </div>
-    <div class="section"><h2>📋 자금 흐름 목록 <span class="sub">${d.flows.length}건 · 고치거나 지운 뒤 저장</span></h2>
+    <div class="section"><h2>자금 흐름 목록 <span class="sub">${d.flows.length}건 · 고치거나 지운 뒤 저장</span></h2>
       <div id="flowGrid"></div>
-      <div class="toolbar actions"><button class="btn primary" id="saveFlows">💾 변경사항 저장</button><span class="muted" id="flowSum"></span></div>
+      <div class="toolbar actions"><button class="btn primary" id="saveFlows">변경사항 저장</button><span class="muted" id="flowSum"></span></div>
     </div>
-    <div class="section"><h2>🏦 부채 잔액 <span class="sub">입력한 날부터 다음 입력 전까지 같은 값 · 순자산 = 총자산 − 부채</span></h2>
+    <div class="section"><h2>부채 잔액 <span class="sub">입력한 날부터 다음 입력 전까지 같은 값 · 순자산 = 총자산 − 부채</span></h2>
       <form class="card form-grid" id="debtForm">
         <label class="field">날짜<input type="date" name="날짜" value="${todayKst()}" required></label>
         <label class="field">부채 잔액 (원)<input name="부채" inputmode="decimal" value="${showNum(lastDebt, 0)}" required></label>
         <label class="field grow">메모<input name="메모" placeholder="예: 전세대출 잔액"></label>
-        <button class="btn primary" type="submit">💾 적용</button>
+        <button class="btn primary" type="submit">적용</button>
       </form>
       <div class="table-wrap" style="margin-top:10px"><table class="data"><thead><tr><th class="l">날짜</th><th>부채</th><th class="l">메모</th><th></th></tr></thead>
         <tbody>${[...d.debt].reverse().map((r) => `<tr><td class="l">${r.날짜}</td><td>${fmt.won(r.부채)}</td><td class="l">${esc(r.메모)}</td><td><button class="del" data-deldebt="${r.날짜}" aria-label="삭제">✕</button></td></tr>`).join("") || `<tr><td colspan="4" class="empty">기록 없음</td></tr>`}</tbody></table></div>
@@ -252,18 +252,18 @@ export async function renderFlows(v, ctx) {
     const f = new FormData(e.target);
     const amt = parseNum(f.get("금액"));
     if (!isNum(amt) || amt === 0) return toast("금액이 0이거나 숫자가 아니에요", "err");
-    busy(e.target.querySelector("button[type=submit]"), "⏳", async () => {
+    busy(e.target.querySelector("button[type=submit]"), "…", async () => {
       await api("/api/flows", { method: "POST", body: JSON.stringify({ 날짜: f.get("날짜"), 통화: f.get("통화"), 금액: amt, 메모: f.get("메모") }) });
-      toast(`✅ ${f.get("날짜")} ${amt > 0 ? "+" : "−"}${Math.abs(amt).toLocaleString("ko-KR")} ${f.get("통화")} 추가`);
+      toast(`${f.get("날짜")} ${amt > 0 ? "+" : "−"}${Math.abs(amt).toLocaleString("ko-KR")} ${f.get("통화")} 추가`);
       await ctx.afterSave();
       renderFlows(v, ctx);
     });
   });
-  v.querySelector("#saveFlows").addEventListener("click", (e) => busy(e.currentTarget, "⏳ 저장 중", async () => {
+  v.querySelector("#saveFlows").addEventListener("click", (e) => busy(e.currentTarget, "저장 중…", async () => {
     if (g.rows.some((r) => !isNum(r.금액) || !r.날짜)) throw new Error("날짜나 금액이 빈 행이 있어요.");
     const sorted = [...g.rows].sort((a, b) => (a.날짜 < b.날짜 ? -1 : a.날짜 > b.날짜 ? 1 : 0));
     const r = await api("/api/flows", { method: "PUT", body: JSON.stringify({ rows: sorted }) });
-    toast(`✅ ${r.rows}건 저장`);
+    toast(`${r.rows}건 저장`);
     await ctx.afterSave();
     renderFlows(v, ctx);
   }));
@@ -272,21 +272,21 @@ export async function renderFlows(v, ctx) {
     const f = new FormData(e.target);
     const debt = parseNum(f.get("부채"));
     if (!isNum(debt) || debt < 0) return toast("부채 잔액을 0 이상 숫자로 넣어 주세요", "err");
-    busy(e.target.querySelector("button[type=submit]"), "⏳", async () => {
+    busy(e.target.querySelector("button[type=submit]"), "…", async () => {
       await api("/api/debt", { method: "POST", body: JSON.stringify({ 날짜: f.get("날짜"), 부채: debt, 메모: f.get("메모") }) });
-      toast(`✅ ${f.get("날짜")} 부채 ${fmt.won(debt)}`);
+      toast(`${f.get("날짜")} 부채 ${fmt.won(debt)}`);
       await ctx.afterSave();
       renderFlows(v, ctx);
     });
   });
   v.querySelectorAll("[data-deldebt]").forEach((b) => b.addEventListener("click", () => {
     if (!confirm(`${b.dataset.deldebt} 부채 기록을 지울까요?`)) return;
-    busy(b, "⏳", async () => { await api(`/api/debt?date=${b.dataset.deldebt}`, { method: "DELETE" }); toast("🗑️ 삭제"); await ctx.afterSave(); renderFlows(v, ctx); });
+    busy(b, "…", async () => { await api(`/api/debt?date=${b.dataset.deldebt}`, { method: "DELETE" }); toast("삭제"); await ctx.afterSave(); renderFlows(v, ctx); });
   }));
 }
 
 // =====================================================================
-// 🎯 종목 메모 편집 (보유) / 👁️ 관찰 종목
+// 종목 메모 편집 (보유) / 관찰 종목
 // =====================================================================
 const pctCell = (x) => (isNum(x) ? `<span class="${x > 0 ? "up" : x < 0 ? "down" : ""}">${x >= 0 ? "+" : ""}${x.toFixed(1)}%</span>` : "-");
 const priceFmt = (x, r) => fmt.price(x, r.통화);
@@ -310,13 +310,13 @@ const noteCols = (withAvg, symbol) => [
   { key: "통화", label: "통화", type: "ro" },
   ...(withAvg ? [{ key: "평균단가", label: "평균단가", type: "ro", align: "r", fmt: priceFmt }] : []),
   { key: "현재가", label: "현재가", type: "ro", align: "r", fmt: priceFmt },
-  { key: "목표가_상단", label: "🎯 목표가(상단)", type: "num", frac: 4, width: 100 },
+  { key: "목표가_상단", label: "목표가(상단)", type: "num", frac: 4, width: 100 },
   { key: "업사이드_pct", label: "업사이드", type: "ro", align: "r", cls: "c-up", fmt: pctCell },
-  { key: "목표가_하단", label: "🛡️ 목표가(하단)", type: "num", frac: 4, width: 100 },
+  { key: "목표가_하단", label: "목표가(하단)", type: "num", frac: 4, width: 100 },
   { key: "다운사이드_pct", label: "다운사이드", type: "ro", align: "r", cls: "c-dn", fmt: pctCell },
   { key: "RR", label: "R/R", type: "ro", align: "r", cls: "c-rr", fmt: (x) => (isNum(x) ? x.toFixed(2) : "-") },
-  { key: "업사이드_메모", label: "📈 업사이드 메모", type: "memo", width: 220 },
-  { key: "다운사이드_메모", label: "📉 다운사이드 메모", type: "memo", width: 220 },
+  { key: "업사이드_메모", label: "업사이드 메모", type: "memo", width: 220 },
+  { key: "다운사이드_메모", label: "다운사이드 메모", type: "memo", width: 220 },
   { key: "업데이트일", label: "업데이트", type: "ro" },
 ];
 
@@ -346,11 +346,11 @@ function noteGrid(container, rows, withAvg, symbol, deletable) {
 }
 
 export function notesEditor(container, rows, ctx) {
-  container.innerHTML = `<div id="ng"></div><div class="toolbar actions"><button class="btn primary" id="saveNotes">💾 보유 종목 메모 저장</button><span class="muted">고친 행은 업데이트일이 오늘로 바뀌어요</span></div>`;
+  container.innerHTML = `<div id="ng"></div><div class="toolbar actions"><button class="btn primary" id="saveNotes">보유 종목 메모 저장</button><span class="muted">고친 행은 업데이트일이 오늘로 바뀌어요</span></div>`;
   const g = noteGrid(container.querySelector("#ng"), rows, true, false, false);
-  container.querySelector("#saveNotes").addEventListener("click", (e) => busy(e.currentTarget, "⏳ 저장 중", async () => {
+  container.querySelector("#saveNotes").addEventListener("click", (e) => busy(e.currentTarget, "저장 중…", async () => {
     const r = await api("/api/notes", { method: "PUT", body: JSON.stringify({ rows: g.rows }) });
-    toast(`✅ ${r.rows}개 종목 메모 저장`);
+    toast(`${r.rows}개 종목 메모 저장`);
     await ctx.afterSave(true);
   }));
 }
@@ -361,30 +361,30 @@ export function watchlistEditor(container, rows, ctx) {
       <label class="field">종목명<input name="종목" placeholder="예: 엔비디아" required></label>
       <label class="field">심볼 <small>yfinance 표기</small><input name="심볼" placeholder="NVDA · 005930.KS · 475960.KQ · 8725.T · AIXA.DE" required></label>
       <label class="field">통화<select name="통화">${CCYS.map((c) => `<option>${c}</option>`).join("")}</select></label>
-      <button class="btn primary" type="submit">＋ 관찰 종목 등록</button>
+      <button class="btn primary" type="submit">+ 관찰 종목 등록</button>
     </form>
     <p class="caption">한국은 종목코드+.KS(코스피)/.KQ(코스닥), 미국은 티커, 일본은 코드+.T, 유럽은 Yahoo 표기(.DE, .PA, .AS, .L …). 현재가는 10분 안에 붙어요.</p>
     <div id="wg" style="margin-top:10px"></div>
-    <div class="toolbar actions"><button class="btn primary" id="saveWl">💾 관찰 종목 저장</button><span class="muted">✕ 로 지운 뒤 저장하면 목록에서 빠져요</span></div>`;
+    <div class="toolbar actions"><button class="btn primary" id="saveWl">관찰 종목 저장</button><span class="muted">✕ 로 지운 뒤 저장하면 목록에서 빠져요</span></div>`;
   const g = noteGrid(container.querySelector("#wg"), rows, false, true, true);
   container.querySelector("#wlForm").addEventListener("submit", (e) => {
     e.preventDefault();
     const f = new FormData(e.target);
-    busy(e.target.querySelector("button[type=submit]"), "⏳", async () => {
+    busy(e.target.querySelector("button[type=submit]"), "…", async () => {
       const r = await api("/api/watchlist", { method: "POST", body: JSON.stringify({ 종목: f.get("종목"), 심볼: f.get("심볼"), 통화: f.get("통화") }) });
-      toast(r.status === "added" ? `✅ '${f.get("종목")}' 등록 — 현재가는 10분 안에 붙어요` : `⚠️ 이미 관찰 중이라 심볼만 바꿨어요`);
+      toast(r.status === "added" ? `'${f.get("종목")}' 등록 — 현재가는 10분 안에 붙어요` : `이미 관찰 중이라 심볼만 바꿨어요`);
       await ctx.afterSave(true);
     });
   });
-  container.querySelector("#saveWl").addEventListener("click", (e) => busy(e.currentTarget, "⏳ 저장 중", async () => {
+  container.querySelector("#saveWl").addEventListener("click", (e) => busy(e.currentTarget, "저장 중…", async () => {
     const r = await api("/api/watchlist", { method: "PUT", body: JSON.stringify({ rows: g.rows }) });
-    toast(`✅ 관찰 종목 ${r.rows}개 저장`);
+    toast(`관찰 종목 ${r.rows}개 저장`);
     await ctx.afterSave(true);
   }));
 }
 
 // =====================================================================
-// ↕ 순서 편집
+// 순서 편집
 // =====================================================================
 export function orderEditor(container, holdings, ctx) {
   const list = holdings.map((h) => h.종목);
@@ -394,15 +394,15 @@ export function orderEditor(container, holdings, ctx) {
       ${list.map((t, i) => `<div class="order-row"><span class="idx">${i + 1}</span><span class="name">${esc(t)}</span>
         <button class="btn ghost sm" data-up="${i}" ${i === 0 ? "disabled" : ""} aria-label="위로">▲</button>
         <button class="btn ghost sm" data-down="${i}" ${i === list.length - 1 ? "disabled" : ""} aria-label="아래로">▼</button></div>`).join("")}
-      <div class="toolbar actions"><button class="btn primary" id="saveOrder">💾 순서 저장</button><button class="btn ghost" id="cancelOrder">닫기</button></div>
+      <div class="toolbar actions"><button class="btn primary" id="saveOrder">순서 저장</button><button class="btn ghost" id="cancelOrder">닫기</button></div>
     </div>`;
     container.querySelectorAll("[data-up]").forEach((b) => b.addEventListener("click", () => { const i = +b.dataset.up; [list[i - 1], list[i]] = [list[i], list[i - 1]]; draw(); }));
     container.querySelectorAll("[data-down]").forEach((b) => b.addEventListener("click", () => { const i = +b.dataset.down; [list[i + 1], list[i]] = [list[i], list[i + 1]]; draw(); }));
     container.querySelector("#cancelOrder").addEventListener("click", () => { container.innerHTML = ""; });
-    container.querySelector("#saveOrder").addEventListener("click", (e) => busy(e.currentTarget, "⏳ 저장 중", async () => {
+    container.querySelector("#saveOrder").addEventListener("click", (e) => busy(e.currentTarget, "저장 중…", async () => {
       const order = Object.fromEntries(list.map((t, i) => [t, i]));
       await api("/api/order", { method: "PUT", body: JSON.stringify({ order }) });
-      toast(`✅ ${list.length}개 종목 순서 저장`);
+      toast(`${list.length}개 종목 순서 저장`);
       container.innerHTML = "";
       await ctx.afterSave(true);
     }));
@@ -411,7 +411,7 @@ export function orderEditor(container, holdings, ctx) {
 }
 
 // =====================================================================
-// ⚙️ 설정
+// 설정
 // =====================================================================
 export async function renderSettings(v, ctx) {
   const tok = v.dataset.tok;
@@ -420,17 +420,17 @@ export async function renderSettings(v, ctx) {
   try { d = await api("/api/settings"); } catch (e) { v.innerHTML = `<div class="notice err">${esc(e.message)}</div>`; return; }
   if (v.dataset.tok !== tok) return; // 그새 다른 탭으로 감
   v.innerHTML = `
-    <div class="section"><h2>☁️ 구글 시트</h2>
-      <div class="card"><a href="https://docs.google.com/spreadsheets/d/${esc(d.sheetId)}" target="_blank" rel="noopener">시트 열기 ↗</a>
-      <p class="caption">시트를 직접 고쳐도 돼요. 웹에는 1분 안에 반영되고, 바로 보려면 위의 🔄 새로고침을 눌러요.</p></div>
+    <div class="section"><h2>구글 시트</h2>
+      <div class="card"><a href="https://docs.google.com/spreadsheets/d/${esc(d.sheetId)}" target="_blank" rel="noopener">시트 열기 </a>
+      <p class="caption">시트를 직접 고쳐도 돼요. 웹에는 1분 안에 반영되고, 바로 보려면 위의 새로고침을 눌러요.</p></div>
     </div>
-    <div class="section"><h2>🏷 카테고리 <span class="sub">종목 → 카테고리 (비중 묶음)</span></h2>
+    <div class="section"><h2>카테고리 <span class="sub">종목 → 카테고리 (비중 묶음)</span></h2>
       <div id="catGrid"></div>
-      <div class="toolbar actions"><button class="btn ghost" id="addCat">＋ 행 추가</button><button class="btn primary" id="saveCat">💾 카테고리 저장</button></div>
+      <div class="toolbar actions"><button class="btn ghost" id="addCat">+ 행 추가</button><button class="btn primary" id="saveCat">카테고리 저장</button></div>
     </div>
-    <div class="section"><h2>📈 시세 심볼 <span class="sub">종목 → yfinance 표기 · 출처는 자동 (한·미·일 = 네이버, 유럽 등 = Yahoo)</span></h2>
+    <div class="section"><h2>시세 심볼 <span class="sub">종목 → yfinance 표기 · 출처는 자동 (한·미·일 = 네이버, 유럽 등 = Yahoo)</span></h2>
       <div id="tmGrid"></div>
-      <div class="toolbar actions"><button class="btn ghost" id="addTm">＋ 행 추가</button><button class="btn primary" id="saveTm">💾 심볼 저장</button></div>
+      <div class="toolbar actions"><button class="btn ghost" id="addTm">+ 행 추가</button><button class="btn primary" id="saveTm">심볼 저장</button></div>
     </div>`;
   const cg = editGrid(v.querySelector("#catGrid"), [
     { key: "종목", label: "종목", type: "text", width: 140 },
@@ -445,12 +445,12 @@ export async function renderSettings(v, ctx) {
   ], d.tickers, { deletable: true });
   v.querySelector("#addCat").addEventListener("click", () => cg.add({ 종목: "", 카테고리: "" }));
   v.querySelector("#addTm").addEventListener("click", () => tg.add({ 종목: "", 심볼: "" }));
-  v.querySelector("#saveCat").addEventListener("click", (e) => busy(e.currentTarget, "⏳", async () => {
+  v.querySelector("#saveCat").addEventListener("click", (e) => busy(e.currentTarget, "…", async () => {
     const r = await api("/api/categories", { method: "PUT", body: JSON.stringify({ rows: cg.rows }) });
-    toast(`✅ 카테고리 ${r.rows}개 저장`); await ctx.afterSave(); renderSettings(v, ctx);
+    toast(`카테고리 ${r.rows}개 저장`); await ctx.afterSave(); renderSettings(v, ctx);
   }));
-  v.querySelector("#saveTm").addEventListener("click", (e) => busy(e.currentTarget, "⏳", async () => {
+  v.querySelector("#saveTm").addEventListener("click", (e) => busy(e.currentTarget, "…", async () => {
     const r = await api("/api/tickers", { method: "PUT", body: JSON.stringify({ rows: tg.rows }) });
-    toast(`✅ 심볼 ${r.rows}개 저장 — 새 심볼 시세는 10분 안에 붙어요`); await ctx.afterSave(); renderSettings(v, ctx);
+    toast(`심볼 ${r.rows}개 저장 — 새 심볼 시세는 10분 안에 붙어요`); await ctx.afterSave(); renderSettings(v, ctx);
   }));
 }

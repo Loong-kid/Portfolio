@@ -14,7 +14,7 @@ async function showLogin(msg = "") {
   let pid = store.get("pid", list[0]?.id);
   $app.innerHTML = `
     <div class="login"><form class="card" id="lf">
-      <h1>📊 포트폴리오 모니터</h1>
+      <h1><span class="mark" aria-hidden="true"></span>포트폴리오 모니터</h1>
       <p>포트폴리오를 고르고 비밀번호를 입력해 주세요.</p>
       <label>포트폴리오</label>
       <div class="seg" role="group">${list.map((p) => `<button type="button" data-pid="${esc(p.id)}" aria-pressed="${p.id === pid}">${esc(p.name)}</button>`).join("")}</div>
@@ -43,8 +43,8 @@ async function showLogin(msg = "") {
 }
 
 // ---------- 뼈대 ----------
-const TABS_ADMIN = [["port", "💼 현재 포트폴리오"], ["snap", "📸 스냅샷"], ["flows", "💸 자금 흐름"], ["nav", "📈 자산 추이"], ["notes", "🎯 종목 메모"], ["settings", "⚙️ 설정"]];
-const TABS_GUEST = [["port", "💼 현재 포트폴리오"], ["notes", "🎯 종목 메모"]];
+const TABS_ADMIN = [["port", "현재 포트폴리오"], ["snap", "스냅샷"], ["flows", "자금 흐름"], ["nav", "자산 추이"], ["notes", "종목 메모"], ["settings", "설정"]];
+const TABS_GUEST = [["port", "현재 포트폴리오"], ["notes", "종목 메모"]];
 
 function shell() {
   const admin = S.me.role === "admin";
@@ -52,8 +52,8 @@ function shell() {
   if (!tabs.some(([k]) => k === S.tab)) S.tab = "port";
   $app.innerHTML = `
     <header class="topbar"><div class="wrap">
-      <div class="brand">📊 ${esc(S.me.name)}의 포트폴리오 <span class="badge">${admin ? "👑 관리자" : "👀 게스트"}</span></div>
-      ${admin ? `<button class="icon-btn" id="refresh" title="시트와 시세를 지금 다시 불러와요">🔄 새로고침</button>` : ""}
+      <div class="brand"><span class="mark" aria-hidden="true"></span>${esc(S.me.name)}의 포트폴리오 <span class="badge">${admin ? "관리자" : "게스트"}</span></div>
+      ${admin ? `<button class="icon-btn" id="refresh" title="시트와 시세를 지금 다시 불러와요">새로고침</button>` : ""}
       <button class="icon-btn" id="logout">로그아웃</button>
       <nav class="tabs" role="tablist">${tabs.map(([k, l]) => `<button class="tab" role="tab" data-tab="${k}" aria-selected="${k === S.tab}">${l}</button>`).join("")}</nav>
     </div></header>
@@ -68,10 +68,10 @@ function shell() {
   }));
   document.getElementById("logout").addEventListener("click", async () => { await api("/api/logout", { method: "POST" }).catch(() => {}); showLogin(); });
   document.getElementById("refresh")?.addEventListener("click", async (e) => {
-    const b = e.currentTarget; b.disabled = true; b.textContent = "⏳ 불러오는 중";
+    const b = e.currentTarget; b.disabled = true; b.textContent = "불러오는 중…";
     try { await api("/api/refresh", { method: "POST" }); S.nav = null; await loadData(); }
     catch (err) { alert(err.message); }
-    b.disabled = false; b.textContent = "🔄 새로고침";
+    b.disabled = false; b.textContent = "새로고침";
   });
 }
 
@@ -122,7 +122,7 @@ function renderSummary() {
         <div><dt>시세</dt><dd>${fmt.time(d.pricesAt)} <small>10분마다 갱신</small></dd></div>` : ""}
       </dl>
     </div>
-    ${d.warnings?.length ? `<div class="hero-note">⚠️ 현재가를 못 받은 종목: ${d.warnings.map((w) => `<b>${esc(w.종목)}</b> (${w.출처 === "snapshot" ? "스냅샷 가격 사용" : "가격 없음"})`).join(", ")}</div>` : ""}
+    ${d.warnings?.length ? `<div class="hero-note">현재가를 못 받은 종목: ${d.warnings.map((w) => `<b>${esc(w.종목)}</b> (${w.출처 === "snapshot" ? "스냅샷 가격 사용" : "가격 없음"})`).join(", ")}</div>` : ""}
     ${!d.latestSnapshot ? `<div class="hero-note">스냅샷이 없어요.</div>` : ""}`;
 }
 
@@ -166,7 +166,7 @@ function renderPortfolio(v) {
     <div class="section port-top">
     <div class="port-table">
       <h2>보유 종목 <span class="sub">${rows.length}개</span>
-        ${admin ? `<span style="margin-left:auto;display:inline-flex;gap:10px;align-items:center"><button class="btn ghost sm" id="orderBtn">↕ 순서 편집</button><label class="toggle"><input type="checkbox" id="blur" ${S.blur ? "checked" : ""}> 🔒 금액 가리기</label></span>` : `<span class="sub" style="margin-left:auto">🔒 게스트 보기 (금액 숨김)</span>`}
+        ${admin ? `<span style="margin-left:auto;display:inline-flex;gap:10px;align-items:center"><button class="btn ghost sm" id="orderBtn">순서 편집</button><label class="toggle"><input type="checkbox" id="blur" ${S.blur ? "checked" : ""}> 금액 가리기</label></span>` : `<span class="sub" style="margin-left:auto">게스트 보기 (금액 숨김)</span>`}
       </h2>
       <div id="orderBox"></div>
       <div class="table-wrap has-cards"><table class="data">
@@ -269,7 +269,7 @@ async function renderNav(v) {
       <div class="metric"><div class="label">스냅샷 수</div><div class="value">${N.snapshotCount}</div></div>
     </div>
 
-    <div class="section"><h2>💰 금융수익금 <span class="sub">순자산 기준 · 외부 자금 흐름 제외</span></h2>
+    <div class="section"><h2>금융수익금 <span class="sub">순자산 기준 · 외부 자금 흐름 제외</span></h2>
       <div class="metrics">
         <div class="metric hero"><div class="label">이 기간 금융수익금</div><div class="value ${signCls(income)}">${fmt.krw(income)}</div><div class="delta ${signCls(income)}">${fmt.pct(first.순자산 ? income / first.순자산 : null)}</div></div>
         <div class="metric"><div class="label">${inc.year ?? year} YTD 금융수익금</div><div class="value ${signCls(inc.ytd_income)}">${inc.ytd_income == null ? "—" : fmt.krw(inc.ytd_income)}</div>${inc.ytd_income != null && inc.year_anchor_nav_net ? `<div class="delta ${signCls(inc.ytd_income)}">${fmt.pct(inc.ytd_income / inc.year_anchor_nav_net)}</div>` : ""}</div>
@@ -279,7 +279,7 @@ async function renderNav(v) {
       <p class="caption">금융수익금 = 기간 끝 순자산 − 시작 순자산 − 그 사이 외부 유입. YTD 기준점: ${esc(inc.year_anchor_date || "—")} (순자산 ${fmt.krw(inc.year_anchor_nav_net)}).</p>
     </div>
 
-    <div class="section"><h2>📉 낙폭 <span class="sub">MDD = 기간 내 고점 대비 최대 하락 · 현재 낙폭 = 기간 내 최고점 대비 지금</span></h2>
+    <div class="section"><h2>낙폭 <span class="sub">MDD = 기간 내 고점 대비 최대 하락 · 현재 낙폭 = 기간 내 최고점 대비 지금</span></h2>
       <div class="metrics">
         ${ddN ? `<div class="metric"><div class="label">MDD (순자산)</div><div class="value down">${fmt.pct(ddN.mdd)}</div><div class="delta muted">${ddN.mddPeak?.날짜 ?? ""} → ${ddN.mddTrough?.날짜 ?? ""}</div></div>
         <div class="metric"><div class="label">현재 낙폭 (순자산)</div><div class="value ${ddN.cur < 0 ? "down" : ""}">${fmt.pct(ddN.cur)}</div><div class="delta muted">전고점 ${ddN.top.날짜}</div></div>` : ""}
@@ -289,7 +289,7 @@ async function renderNav(v) {
       <div class="card" style="margin-top:10px"><div id="c-dd"></div></div>
     </div>
 
-    ${unit.length >= 2 ? `<div class="section"><h2>📈 기준가 <span class="sub">외부 자금 흐름에 영향받지 않는 운용 성과 · 2024-12-24 = 1000</span></h2>
+    ${unit.length >= 2 ? `<div class="section"><h2>기준가 <span class="sub">외부 자금 흐름에 영향받지 않는 운용 성과 · 2024-12-24 = 1000</span></h2>
       <div class="card"><div id="c-unit"></div></div>
       <div class="metrics" style="margin-top:10px">
         <div class="metric"><div class="label">총 기준가 (현재)</div><div class="value">${fmt.num(u1.기준가_총자산)}</div><div class="delta ${signCls(u1.기준가_총자산 / u0.기준가_총자산 - 1)}">${fmt.pct(u1.기준가_총자산 / u0.기준가_총자산 - 1)}</div></div>
@@ -299,7 +299,7 @@ async function renderNav(v) {
       </div>
     </div>` : ""}
 
-    <div class="section"><h2>🧮 좌수 <span class="sub">외부 자금이 들어오면 늘고 나가면 줄어요 (운용 손익으로는 안 바뀜)</span></h2>
+    <div class="section"><h2>좌수 <span class="sub">외부 자금이 들어오면 늘고 나가면 줄어요 (운용 손익으로는 안 바뀜)</span></h2>
       <div class="card"><div id="c-units"></div></div>
       <div class="metrics" style="margin-top:10px">
         <div class="metric"><div class="label">좌수 총 (현재)</div><div class="value">${fmt.num(last.좌수_총)}</div><div class="delta muted">${(last.좌수_총 - first.좌수_총 >= 0 ? "+" : "") + fmt.num(last.좌수_총 - first.좌수_총)}</div></div>
@@ -307,13 +307,13 @@ async function renderNav(v) {
       </div>
     </div>
 
-    <details class="more"><summary>📋 일별 데이터 (${rows.length}행)</summary>
+    <details class="more"><summary>일별 데이터 (${rows.length}행)</summary>
       <div class="table-wrap" style="max-height:480px;margin-top:8px"><table class="data">
         <thead><tr><th class="l sticky">날짜</th><th>총자산</th><th>순자산</th><th>부채</th><th>외부유입_총</th><th>외부유입_순</th><th>좌수_총</th><th>좌수_순</th><th>기준가_총</th><th>기준가_순</th></tr></thead>
         <tbody>${[...rows].reverse().map((r) => `<tr><td class="l sticky">${r.날짜}</td><td>${fmt.won(r.총자산)}</td><td>${fmt.won(r.순자산)}</td><td>${fmt.won(r.부채)}</td><td>${r.외부유입_총 ? fmt.won(r.외부유입_총) : ""}</td><td>${r.외부유입_순 ? fmt.won(r.외부유입_순) : ""}</td><td>${fmt.num(r.좌수_총, 4)}</td><td>${fmt.num(r.좌수_순, 4)}</td><td>${fmt.num(r.기준가_총자산)}</td><td>${fmt.num(r.기준가_순자산)}</td></tr>`).join("")}</tbody>
       </table></div>
     </details>
-    ${N.debt.length ? `<details class="more"><summary>💸 부채 이력 (${N.debt.length}건)</summary>
+    ${N.debt.length ? `<details class="more"><summary>부채 이력 (${N.debt.length}건)</summary>
       <div class="table-wrap" style="margin-top:8px"><table class="data"><thead><tr><th class="l">날짜</th><th>부채</th><th class="l">메모</th></tr></thead>
       <tbody>${N.debt.map((r) => `<tr><td class="l">${r.날짜}</td><td>${fmt.won(r.부채)}</td><td class="l">${esc(r.메모)}</td></tr>`).join("")}</tbody></table></div>
     </details>` : ""}`;
@@ -352,7 +352,7 @@ function notesTable(rows, withAvg, symbolCol) {
   if (!rows.length) return `<div class="empty">없어요</div>`;
   return `<div class="table-wrap"><table class="data">
     <thead><tr><th class="l sticky">종목</th>${symbolCol ? `<th class="l">심볼</th>` : `<th class="l">카테고리</th>`}<th class="l">통화</th>${withAvg ? "<th>평균단가</th>" : ""}<th>현재가</th>
-      <th>🎯 목표가(상단)</th><th>업사이드</th><th>🛡️ 목표가(하단)</th><th>다운사이드</th><th>R/R</th><th class="l">📈 업사이드 메모</th><th class="l">📉 다운사이드 메모</th><th class="l">업데이트</th></tr></thead>
+      <th>목표가(상단)</th><th>업사이드</th><th>목표가(하단)</th><th>다운사이드</th><th>R/R</th><th class="l">업사이드 메모</th><th class="l">다운사이드 메모</th><th class="l">업데이트</th></tr></thead>
     <tbody>${rows.map((r) => `<tr>
       <td class="l sticky">${esc(r.종목)}</td>${symbolCol ? `<td class="l">${esc(r.심볼)}</td>` : `<td class="l">${esc(r.카테고리)}</td>`}<td class="l">${esc(r.통화)}</td>
       ${withAvg ? `<td>${fmt.price(r.평균단가, r.통화)}</td>` : ""}<td>${fmt.price(r.현재가, r.통화)}</td>
@@ -366,8 +366,8 @@ function notesTable(rows, withAvg, symbolCol) {
 function renderNotes(v) {
   const d = S.data, admin = S.me.role === "admin";
   v.innerHTML = `
-    <div class="section"><h2>📦 보유 종목 <span class="sub">목표가와 메모 · 팔고 나면 자동으로 숨겨져요</span></h2><div id="notesBox">${admin ? "" : notesTable(d.notes, true, false)}</div></div>
-    <div class="section"><h2>👁️ 관찰 종목 <span class="sub">갖고 있진 않지만 지켜보는 종목</span></h2><div id="wlBox">${admin ? "" : notesTable(d.watchlist, false, true)}</div></div>`;
+    <div class="section"><h2>보유 종목 <span class="sub">목표가와 메모 · 팔고 나면 자동으로 숨겨져요</span></h2><div id="notesBox">${admin ? "" : notesTable(d.notes, true, false)}</div></div>
+    <div class="section"><h2>관찰 종목 <span class="sub">갖고 있진 않지만 지켜보는 종목</span></h2><div id="wlBox">${admin ? "" : notesTable(d.watchlist, false, true)}</div></div>`;
   if (admin) {
     if (d.notes.length) notesEditor(document.getElementById("notesBox"), d.notes, ctx);
     else document.getElementById("notesBox").innerHTML = `<div class="empty">보유 종목이 없어요</div>`;
