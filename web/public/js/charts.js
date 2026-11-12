@@ -190,3 +190,72 @@ export function barList(container, rows) {
       <span class="val">${r.label}${r.sub ? `<small>${r.sub}</small>` : ""}</span>
     </div>`).join("")}</div>`;
 }
+
+/**
+ * 도넛 (카테고리 비중). items: [{name, frac(0~1), won?}]
+ * 색은 8색 고정 순서(--cat-1..8). 8개를 넘으면 작은 것부터 "기타"로 묶는다 (9번째 색은 만들지 않음).
+ * opts: {center, centerSub, fmtWon}
+ */
+export function donut(container, items, opts = {}) {
+  let rows = items.filter((r) => r.frac > 0).sort((a, b) => b.frac - a.frac);
+  if (rows.length > 8) {
+    const head = rows.slice(0, 7), tail = rows.slice(7);
+    const won = tail.every((r) => Number.isFinite(r.won)) ? tail.reduce((s, r) => s + r.won, 0) : null;
+    rows = [...head, { name: `기타 (${tail.length})`, frac: tail.reduce((s, r) => s + r.frac, 0), won, members: tail.map((r) => r.name) }];
+  }
+  rows.forEach((r, i) => { r.color = `var(--cat-${i + 1})`; });
+  const size = 220, R = 100, r0 = 62, cx = size / 2, cy = size / 2;
+  const total = rows.reduce((s, r) => s + r.frac, 0) || 1;
+  const gap = rows.length > 1 ? 0.012 : 0; // 조각 사이 틈 (라디안 비율)
+  let a0 = -Math.PI / 2;
+  const pt = (rad, a) => [cx + rad * Math.cos(a), cy + rad * Math.sin(a)];
+  const paths = rows.map((r, i) => {
+    const sweep = (r.frac / total) * Math.PI * 2;
+    const s = a0 + gap, e = a0 + sweep - gap;
+    a0 += sweep;
+    if (rows.length === 1) return `<circle cx="${cx}" cy="${cy}" r="${(R + r0) / 2}" style="fill:none;stroke:${r.color};stroke-width:${R - r0}" data-i="${i}"/>`;
+    if (e <= s) return "";
+    const large = e - s > Math.PI ? 1 : 0;
+    const [x1, y1] = pt(R, s), [x2, y2] = pt(R, e), [x3, y3] = pt(r0, e), [x4, y4] = pt(r0, s);
+    const mid = (s + e) / 2;
+    const [lx, ly] = pt((R + r0) / 2, mid);
+    const label = r.frac / total >= 0.07 ? `<text x="${lx}" y="${ly + 4}" text-anchor="middle" class="d-pct" style="fill:${[2, 3, 4].includes(i) ? "#111" : "#fff"}">${Math.round((r.frac / total) * 100)}%</text>` : "";
+    return `<path d="M${x1},${y1}A${R},${R} 0 ${large} 1 ${x2},${y2}L${x3},${y3}A${r0},${r0} 0 ${large} 0 ${x4},${y4}Z" style="fill:${r.color}" data-i="${i}"/>${label}`;
+  }).join("");
+  const pct = (f) => `${((f / total) * 100).toFixed(1)}%`;
+  container.innerHTML = `
+    <div class="donut-wrap">
+      <div class="donut" role="img" aria-label="카테고리 비중 ${rows.map((r) => `${r.name} ${pct(r.frac)}`).join(", ")}">
+        <svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}">${paths}
+          <text x="${cx}" y="${cy - 2}" text-anchor="middle" class="d-center">${opts.center ?? ""}</text>
+          <text x="${cx}" y="${cy + 18}" text-anchor="middle" class="d-sub">${opts.centerSub ?? ""}</text>
+        </svg>
+        <div class="tooltip" hidden></div>
+      </div>
+      <ul class="d-legend">${rows.map((r, i) => `
+        <li data-i="${i}" title="${r.members ? r.members.join(", ") : r.name}"><span class="sw" style="background:${r.color}"></span><span class="nm">${r.name}</span>
+          <b>${pct(r.frac)}</b>${Number.isFinite(r.won) && opts.fmtWon ? `<small>${opts.fmtWon(r.won)}</small>` : ""}</li>`).join("")}
+      </ul>
+    </div>`;
+  // 마우스를 올리면 그 조각만 진하게 + 툴팁 (범례에 올려도 같은 동작)
+  const svg = container.querySelector("svg");
+  const tip = container.querySelector(".tooltip");
+  const segs = [...container.querySelectorAll("svg [data-i]")];
+  const lis = [...container.querySelectorAll(".d-legend li")];
+  const show = (i, ev) => {
+    segs.forEach((s) => s.classList.toggle("dim", +s.dataset.i !== i));
+    lis.forEach((l) => l.classList.toggle("on", +l.dataset.i === i));
+    const r = rows[i];
+    tip.innerHTML = `<div class="t-row"><span class="k"><i style="background:${r.color};height:10px"></i>${r.name}</span><b>${pct(r.frac)}</b></div>${Number.isFinite(r.won) && opts.fmtWon ? `<div class="t-row"><span class="k">평가액</span><b>${opts.fmtWon(r.won)}</b></div>` : ""}${r.members ? `<div class="t-date" style="margin:4px 0 0">${r.members.join(", ")}</div>` : ""}`;
+    tip.hidden = false;
+    if (ev) {
+      const box = container.querySelector(".donut").getBoundingClientRect();
+      tip.style.left = `${Math.min(ev.clientX - box.left + 12, box.width - tip.offsetWidth)}px`;
+      tip.style.top = `${ev.clientY - box.top + 12}px`;
+    } else { tip.style.left = "8px"; tip.style.top = "8px"; }
+  };
+  const hide = () => { segs.forEach((s) => s.classList.remove("dim")); lis.forEach((l) => l.classList.remove("on")); tip.hidden = true; };
+  segs.forEach((s) => { s.addEventListener("pointermove", (ev) => show(+s.dataset.i, ev)); s.addEventListener("pointerleave", hide); });
+  lis.forEach((l) => { l.addEventListener("pointerenter", () => show(+l.dataset.i)); l.addEventListener("pointerleave", hide); });
+  svg.addEventListener("pointerleave", hide);
+}

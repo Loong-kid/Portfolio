@@ -1,4 +1,4 @@
-import { lineChart, barList } from "./charts.js";
+import { lineChart, barList, donut } from "./charts.js";
 import { esc, isNum, store, fmt, signCls, api } from "./util.js";
 import { renderSnapshots, renderFlows, renderSettings, notesEditor, watchlistEditor, orderEditor } from "./edit.js";
 
@@ -183,7 +183,11 @@ function renderPortfolio(v) {
   document.getElementById("orderBtn")?.addEventListener("click", () => orderEditor(document.getElementById("orderBox"), rows, ctx));
   const showWon = admin && !S.blur;
   barList(document.getElementById("bars"), d.bars.map((b) => ({ name: b.종목, frac: b.비중, label: `${(b.비중 * 100).toFixed(1)}%`, sub: showWon ? fmt.krw(b.평가액) : "" })));
-  barList(document.getElementById("cats"), d.categories.map((c) => ({ name: c.카테고리, frac: c.비중, label: `${(c.비중 * 100).toFixed(1)}%`, sub: showWon ? fmt.krw(c.평가액) : "" })));
+  donut(document.getElementById("cats"), d.categories.map((c) => ({ name: c.카테고리, frac: c.비중, won: showWon ? c.평가액 : null })), {
+    center: showWon ? fmt.krw(d.totals?.평가액) : `${d.categories.length}개`,
+    centerSub: showWon ? "총 평가액" : "카테고리",
+    fmtWon: fmt.krw,
+  });
 }
 
 // ---------- 자산 추이 ----------

@@ -283,3 +283,23 @@ code { background: var(--surface-2); padding: 1px 5px; border-radius: 5px; font-
   .form-grid .btn { flex: 1 1 100%; }
   .toolbar.actions .btn { flex: 1 1 auto; }
 }
+
+/* ---------- 도넛 (카테고리 8색: 차트 지침 기본 팔레트, 순서 고정) ---------- */
+:root { --cat-1:#2a78d6; --cat-2:#eb6834; --cat-3:#1baf7a; --cat-4:#eda100; --cat-5:#e87ba4; --cat-6:#008300; --cat-7:#6250d6; --cat-8:#e34948; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --cat-1:#3987e5; --cat-2:#d95926; --cat-3:#199e70; --cat-4:#c98500; --cat-5:#d55181; --cat-6:#008300; --cat-7:#9085e9; --cat-8:#e66767; } }
+:root[data-theme="dark"] { --cat-1:#3987e5; --cat-2:#d95926; --cat-3:#199e70; --cat-4:#c98500; --cat-5:#d55181; --cat-6:#008300; --cat-7:#9085e9; --cat-8:#e66767; }
+.donut-wrap { display: flex; gap: 20px; align-items: center; flex-wrap: wrap; justify-content: center; }
+.donut { position: relative; flex: none; }
+.donut svg { display: block; max-width: 100%; height: auto; }
+.donut path, .donut circle { transition: opacity .15s; cursor: pointer; }
+.donut .dim { opacity: .3; }
+.donut .d-pct { fill: #fff; font-size: 12px; font-weight: 700; pointer-events: none; }
+.donut .d-center { fill: var(--text); font-size: 18px; font-weight: 800; }
+.donut .d-sub { fill: var(--text-3); font-size: 12px; }
+.d-legend { list-style: none; margin: 0; padding: 0; flex: 1 1 200px; min-width: 0; display: grid; gap: 2px; }
+.d-legend li { display: grid; grid-template-columns: 12px 1fr auto auto; gap: 8px; align-items: center; padding: 5px 8px; border-radius: 8px; font-size: 14px; cursor: default; }
+.d-legend li.on { background: var(--surface-2); }
+.d-legend .sw { width: 12px; height: 12px; border-radius: 3px; }
+.d-legend .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
+.d-legend b { font-weight: 700; }
+.d-legend small { color: var(--text-3); min-width: 56px; text-align: right; }
