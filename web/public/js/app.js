@@ -1,48 +1,9 @@
 import { lineChart, barList } from "./charts.js";
+import { esc, isNum, store, fmt, signCls, api } from "./util.js";
+import { renderSnapshots, renderFlows, renderSettings, notesEditor, watchlistEditor, orderEditor } from "./edit.js";
 
 // ---------- 공통 ----------
 const $app = document.getElementById("app");
-const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-const isNum = (v) => typeof v === "number" && Number.isFinite(v);
-const store = {
-  get(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch { return d; } },
-  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* 사생활 보호 모드 */ } },
-};
-
-const fmt = {
-  krw(v) {
-    if (!isNum(v)) return "-";
-    const a = Math.abs(v), s = v < 0 ? "-" : "";
-    if (a >= 1e8) return `${s}₩${(a / 1e8).toFixed(2)}억`;
-    if (a >= 1e4) return `${s}₩${Math.round(a / 1e4).toLocaleString("ko-KR")}만`;
-    return `${s}₩${Math.round(a).toLocaleString("ko-KR")}`;
-  },
-  won(v) { return isNum(v) ? `${v < 0 ? "-" : ""}₩${Math.round(Math.abs(v)).toLocaleString("ko-KR")}` : "-"; },
-  pct(v, d = 2) { return isNum(v) ? `${v >= 0 ? "+" : ""}${(v * 100).toFixed(d)}%` : "-"; },
-  pctRaw(v, d = 1) { return isNum(v) ? `${v >= 0 ? "+" : ""}${v.toFixed(d)}%` : "-"; },
-  price(v, ccy) {
-    if (!isNum(v)) return "-";
-    if (ccy === "KRW" || Math.abs(v) >= 10000) return Math.round(v).toLocaleString("ko-KR");
-    return v.toLocaleString("ko-KR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  },
-  qty(v) { return isNum(v) ? v.toLocaleString("ko-KR", { maximumFractionDigits: 4 }) : "-"; },
-  num(v, d = 2) { return isNum(v) ? v.toLocaleString("ko-KR", { minimumFractionDigits: d, maximumFractionDigits: d }) : "-"; },
-  axisKrw(v) {
-    const a = Math.abs(v);
-    if (a >= 1e8) return `${+(v / 1e8).toFixed(1)}억`;
-    if (a >= 1e4) return `${Math.round(v / 1e4).toLocaleString("ko-KR")}만`;
-    return Math.round(v).toLocaleString("ko-KR");
-  },
-  time(ms) { return ms ? new Date(ms).toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Seoul" }) : "-"; },
-};
-const signCls = (v) => (isNum(v) ? (v > 0 ? "up" : v < 0 ? "down" : "") : "");
-
-async function api(path, opts = {}) {
-  const r = await fetch(path, { credentials: "same-origin", headers: { "content-type": "application/json" }, ...opts });
-  const j = await r.json().catch(() => ({ error: `응답 오류 (${r.status})` }));
-  if (!r.ok) { const e = new Error(j.error || `오류 ${r.status}`); e.status = r.status; throw e; }
-  return j;
-}
 
 // ---------- 상태 ----------
 const S = { me: null, data: null, nav: null, tab: store.get("tab", "port"), blur: store.get("blur", false), range: store.get("range", "all"), showTotal: store.get("showTotal", true) };
@@ -82,7 +43,7 @@ async function showLogin(msg = "") {
 }
 
 // ---------- 뼈대 ----------
-const TABS_ADMIN = [["port", "💼 현재 포트폴리오"], ["nav", "📈 자산 추이"], ["notes", "🎯 종목 메모"]];
+const TABS_ADMIN = [["port", "💼 현재 포트폴리오"], ["snap", "📸 스냅샷"], ["flows", "💸 자금 흐름"], ["nav", "📈 자산 추이"], ["notes", "🎯 종목 메모"], ["settings", "⚙️ 설정"]];
 const TABS_GUEST = [["port", "💼 현재 포트폴리오"], ["notes", "🎯 종목 메모"]];
 
 function shell() {
@@ -114,13 +75,26 @@ function shell() {
   });
 }
 
+const EDIT_TABS = new Set(["snap", "flows", "settings"]);
+
 async function loadData(silent = false) {
   const d = await api("/api/portfolio");
   S.data = d;
   renderSummary();
-  if (!silent || S.tab !== "nav") renderView();
+  // 편집 탭은 입력 중일 수 있어서 조용한 재조회 때 다시 그리지 않는다
+  if (!silent || (S.tab !== "nav" && !EDIT_TABS.has(S.tab))) renderView();
   if (d.stale && !silent) setTimeout(() => loadData(true).catch(() => {}), 2500); // 뒤에서 새로 받은 시트로 한 번 더
 }
+
+/** 저장 후: 요약·자산 추이 캐시 갱신 (rerender=true 면 지금 탭도 다시 그림) */
+const ctx = {
+  async afterSave(rerender = false) {
+    S.nav = null;
+    S.data = await api("/api/portfolio");
+    renderSummary();
+    if (rerender) renderView();
+  },
+};
 
 // ---------- 요약 ----------
 function renderSummary() {
@@ -144,10 +118,14 @@ function renderSummary() {
 // ---------- 탭 ----------
 function renderView() {
   const v = document.getElementById("view");
+  v.dataset.tok = String(Math.random()); // 늦게 도착한 이전 탭 응답이 화면을 덮지 않게
   if (!S.data) { v.innerHTML = `<div class="skeleton">불러오는 중…</div>`; return; }
   if (S.tab === "port") renderPortfolio(v);
   else if (S.tab === "nav") renderNav(v);
   else if (S.tab === "notes") renderNotes(v);
+  else if (S.tab === "snap") renderSnapshots(v, ctx);
+  else if (S.tab === "flows") renderFlows(v, ctx);
+  else if (S.tab === "settings") renderSettings(v, ctx);
 }
 
 const isCash = (r) => r.평균단가 == null && !isNum(r.수익률);
@@ -176,8 +154,9 @@ function renderPortfolio(v) {
   v.innerHTML = `
     <div class="section">
       <h2>보유 종목 <span class="sub">${rows.length}개</span>
-        ${admin ? `<label class="toggle" style="margin-left:auto"><input type="checkbox" id="blur" ${S.blur ? "checked" : ""}> 🔒 금액 가리기</label>` : `<span class="sub" style="margin-left:auto">🔒 게스트 보기 (금액 숨김)</span>`}
+        ${admin ? `<span style="margin-left:auto;display:inline-flex;gap:10px;align-items:center"><button class="btn ghost sm" id="orderBtn">↕ 순서 편집</button><label class="toggle"><input type="checkbox" id="blur" ${S.blur ? "checked" : ""}> 🔒 금액 가리기</label></span>` : `<span class="sub" style="margin-left:auto">🔒 게스트 보기 (금액 숨김)</span>`}
       </h2>
+      <div id="orderBox"></div>
       <div class="table-wrap has-cards"><table class="data">
         <thead><tr>
           <th class="l sticky">종목</th><th class="l">카테고리</th><th class="l">통화</th><th>환율</th>
@@ -201,6 +180,7 @@ function renderPortfolio(v) {
       <div><h2>카테고리 비중</h2><div class="card" id="cats"></div></div>
     </div>`;
   document.getElementById("blur")?.addEventListener("change", (e) => { S.blur = e.target.checked; store.set("blur", S.blur); renderPortfolio(v); });
+  document.getElementById("orderBtn")?.addEventListener("click", () => orderEditor(document.getElementById("orderBox"), rows, ctx));
   const showWon = admin && !S.blur;
   barList(document.getElementById("bars"), d.bars.map((b) => ({ name: b.종목, frac: b.비중, label: `${(b.비중 * 100).toFixed(1)}%`, sub: showWon ? fmt.krw(b.평가액) : "" })));
   barList(document.getElementById("cats"), d.categories.map((c) => ({ name: c.카테고리, frac: c.비중, label: `${(c.비중 * 100).toFixed(1)}%`, sub: showWon ? fmt.krw(c.평가액) : "" })));
@@ -368,10 +348,15 @@ function notesTable(rows, withAvg, symbolCol) {
 }
 
 function renderNotes(v) {
-  const d = S.data;
+  const d = S.data, admin = S.me.role === "admin";
   v.innerHTML = `
-    <div class="section"><h2>📦 보유 종목 <span class="sub">목표가와 메모 · 팔고 나면 자동으로 숨겨져요</span></h2>${notesTable(d.notes, true, false)}</div>
-    <div class="section"><h2>👁️ 관찰 종목 <span class="sub">갖고 있진 않지만 지켜보는 종목</span></h2>${notesTable(d.watchlist, false, true)}</div>`;
+    <div class="section"><h2>📦 보유 종목 <span class="sub">목표가와 메모 · 팔고 나면 자동으로 숨겨져요</span></h2><div id="notesBox">${admin ? "" : notesTable(d.notes, true, false)}</div></div>
+    <div class="section"><h2>👁️ 관찰 종목 <span class="sub">갖고 있진 않지만 지켜보는 종목</span></h2><div id="wlBox">${admin ? "" : notesTable(d.watchlist, false, true)}</div></div>`;
+  if (admin) {
+    if (d.notes.length) notesEditor(document.getElementById("notesBox"), d.notes, ctx);
+    else document.getElementById("notesBox").innerHTML = `<div class="empty">보유 종목이 없어요</div>`;
+    watchlistEditor(document.getElementById("wlBox"), d.watchlist, ctx);
+  }
 }
 
 // ---------- 시작 ----------

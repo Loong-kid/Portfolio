@@ -4,6 +4,7 @@ import * as C from "./calc.js";
 import { checkPassword, makeCookie, clearCookie, readSession } from "./auth.js";
 import { portfolios, portfolioById, loadSheet, loadSheetFresh, loadPrices, refreshPrices } from "./store.js";
 import { buildPortfolio, buildNav } from "./api_view.js";
+import { handleEdit } from "./api_edit.js";
 
 const json = (data, init = {}) =>
   new Response(JSON.stringify(data), { ...init, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", ...(init.headers || {}) } });
@@ -71,6 +72,14 @@ async function handleApi(req, env, ctx, url) {
     const tabs = await loadSheetFresh(env, p);
     const log = await refreshPrices(env, { portfolioTabs: { [p.id]: tabs } });
     return json({ ok: true, log });
+  }
+
+  try {
+    const out = await handleEdit(req, env, ctx, url, p);
+    if (out) return json(out);
+  } catch (e) {
+    if (e.status === 400) return err(400, e.message);
+    throw e;
   }
 
   return err(404, "없는 API");
