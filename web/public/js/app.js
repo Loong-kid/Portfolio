@@ -57,8 +57,8 @@ function shell() {
       <button class="icon-btn" id="logout">로그아웃</button>
       <nav class="tabs" role="tablist">${tabs.map(([k, l]) => `<button class="tab" role="tab" data-tab="${k}" aria-selected="${k === S.tab}">${l}</button>`).join("")}</nav>
     </div></header>
+    <section class="hero-band"><div class="wrap" id="summary"></div></section>
     <main class="wrap">
-      <section id="summary"></section>
       <section id="view"></section>
     </main>`;
   $app.querySelectorAll("[data-tab]").forEach((b) => b.addEventListener("click", () => {
@@ -101,18 +101,29 @@ function renderSummary() {
   const d = S.data, admin = S.me.role === "admin";
   const el = document.getElementById("summary");
   const t = d.totals;
+  // 밤색 히어로 띠: 큰 숫자 하나 + 옆에 작은 정보들 (Mercury stat-block)
+  const arrow = (v) => (isNum(v) ? (v > 0 ? "▲" : v < 0 ? "▼" : "") : "");
+  const held = d.holdings.filter((h) => !isCash(h)).length;
   el.innerHTML = `
-    <div class="section metrics">
-      <div class="metric hero"><div class="label">총 평가액</div><div class="value">${t ? fmt.krw(t.평가액) : "•••"}</div></div>
-      <div class="metric"><div class="label">평가 손익</div><div class="value ${t ? signCls(t.평가손익) : ""}">${t ? fmt.krw(t.평가손익) : "•••"}</div>${t ? `<div class="delta ${signCls(t.수익률)}">${fmt.pct(t.수익률)}</div>` : ""}</div>
-      <div class="metric"><div class="label">최근 스냅샷</div><div class="value">${esc(d.latestSnapshot || "—")}</div></div>
+    <div class="hero-grid">
+      <div class="hero-main">
+        <div class="eyebrow">총 평가액</div>
+        <div class="stat">${t ? fmt.krw(t.평가액) : "•••"}</div>
+        ${t ? `<div class="hero-delta">
+            <span class="delta-pill ${signCls(t.수익률)}">${arrow(t.수익률)} ${fmt.pct(t.수익률)}</span>
+            <span>평가 손익 <b class="${signCls(t.평가손익)}">${fmt.krw(t.평가손익)}</b></span>
+            <span class="dim">원가 ${fmt.krw(t.원가)}</span>
+          </div>` : `<div class="hero-delta"><span class="dim">게스트 보기 — 금액은 가려져 있어요</span></div>`}
+      </div>
+      <dl class="hero-side">
+        <div><dt>최근 스냅샷</dt><dd>${esc(d.latestSnapshot || "—")}</dd></div>
+        <div><dt>보유 종목</dt><dd>${held}개 <small>현금·연금 제외</small></dd></div>
+        ${admin ? `<div><dt>환율</dt><dd>$ ${fmt.num(d.fx?.USD, 1)} <small>€ ${fmt.num(d.fx?.EUR, 1)} · ¥ ${fmt.num(d.fx?.JPY, 2)}</small></dd></div>
+        <div><dt>시세</dt><dd>${fmt.time(d.pricesAt)} <small>10분마다 갱신</small></dd></div>` : ""}
+      </dl>
     </div>
-    ${admin ? `<div class="meta-row">
-      <span>환율 USD ${fmt.num(d.fx?.USD, 1)} · EUR ${fmt.num(d.fx?.EUR, 1)} · JPY ${fmt.num(d.fx?.JPY, 2)}</span>
-      <span>시세 ${fmt.time(d.pricesAt)} 기준 · 10분마다 갱신</span>
-    </div>` : ""}
-    ${d.warnings?.length ? `<div class="notice warn">⚠️ 현재가를 못 받은 종목: ${d.warnings.map((w) => `<b>${esc(w.종목)}</b> (${w.출처 === "snapshot" ? "스냅샷 가격 사용" : "가격 없음"})`).join(", ")}</div>` : ""}
-    ${!d.latestSnapshot ? `<div class="notice warn">스냅샷이 없어요.</div>` : ""}`;
+    ${d.warnings?.length ? `<div class="hero-note">⚠️ 현재가를 못 받은 종목: ${d.warnings.map((w) => `<b>${esc(w.종목)}</b> (${w.출처 === "snapshot" ? "스냅샷 가격 사용" : "가격 없음"})`).join(", ")}</div>` : ""}
+    ${!d.latestSnapshot ? `<div class="hero-note">스냅샷이 없어요.</div>` : ""}`;
 }
 
 // ---------- 탭 ----------
@@ -152,20 +163,20 @@ function renderPortfolio(v) {
   const B = (html) => (blur && admin ? `<span class="blurred">${html}</span>` : html);
   const rows = d.holdings;
   v.innerHTML = `
-    <div class="section">
+    <div class="section port-top">
+    <div class="port-table">
       <h2>보유 종목 <span class="sub">${rows.length}개</span>
         ${admin ? `<span style="margin-left:auto;display:inline-flex;gap:10px;align-items:center"><button class="btn ghost sm" id="orderBtn">↕ 순서 편집</button><label class="toggle"><input type="checkbox" id="blur" ${S.blur ? "checked" : ""}> 🔒 금액 가리기</label></span>` : `<span class="sub" style="margin-left:auto">🔒 게스트 보기 (금액 숨김)</span>`}
       </h2>
       <div id="orderBox"></div>
       <div class="table-wrap has-cards"><table class="data">
         <thead><tr>
-          <th class="l sticky">종목</th><th class="l">카테고리</th><th class="l">통화</th><th>환율</th>
+          <th class="l sticky">종목</th><th class="l">카테고리</th><th class="l">통화 · 환율</th>
           ${admin ? "<th>수량</th>" : ""}<th>평균단가</th><th>현재가</th>${admin ? "<th>평가액</th><th>평가손익</th>" : "<th>비중</th>"}<th>수익률</th>
         </tr></thead>
         <tbody>${rows.map((r) => `<tr>
           <td class="l sticky">${esc(r.종목)}${srcTag(r)}</td>
-          <td class="l">${esc(r.카테고리)}</td><td class="l">${esc(r.통화)}</td>
-          <td>${isNum(r.환율) ? fmt.num(r.환율, 2) : ""}</td>
+          <td class="l">${esc(r.카테고리)}</td><td class="l">${esc(r.통화)}${isNum(r.환율) ? ` <span class="muted">· ${fmt.num(r.환율, 2)}</span>` : ""}</td>
           ${admin ? `<td>${isNum(r.수량) ? B(fmt.qty(r.수량)) : ""}</td>` : ""}
           <td>${fmt.price(r.평균단가, r.통화) === "-" ? "" : fmt.price(r.평균단가, r.통화)}</td>
           <td>${isCash(r) ? "" : fmt.price(r.현재가, r.통화)}</td>
@@ -175,18 +186,19 @@ function renderPortfolio(v) {
       </table></div>
       <div class="cards-mobile">${rows.map((r) => holdingCard(r, admin, B)).join("")}</div>
     </div>
-    <div class="section grid-2">
-      <div><h2>종목별 비중 <span class="sub">상위 15개, 현금은 묶어서</span></h2><div class="card" id="bars"></div></div>
-      <div><h2>카테고리 비중</h2><div class="card" id="cats"></div></div>
-    </div>`;
+    <div class="port-donut"><h2>카테고리 비중</h2><div class="card donut-card" id="cats"></div></div>
+    </div>
+    <div class="section"><h2>종목별 비중 <span class="sub">상위 15개 · 현금은 묶어서</span></h2><div class="card" id="bars"></div></div>`;
   document.getElementById("blur")?.addEventListener("change", (e) => { S.blur = e.target.checked; store.set("blur", S.blur); renderPortfolio(v); });
   document.getElementById("orderBtn")?.addEventListener("click", () => orderEditor(document.getElementById("orderBox"), rows, ctx));
   const showWon = admin && !S.blur;
   barList(document.getElementById("bars"), d.bars.map((b) => ({ name: b.종목, frac: b.비중, label: `${(b.비중 * 100).toFixed(1)}%`, sub: showWon ? fmt.krw(b.평가액) : "" })));
   donut(document.getElementById("cats"), d.categories.map((c) => ({ name: c.카테고리, frac: c.비중, won: showWon ? c.평가액 : null })), {
-    center: showWon ? fmt.krw(d.totals?.평가액) : `${d.categories.length}개`,
-    centerSub: showWon ? "총 평가액" : "카테고리",
+    center: `${d.categories.length}개`,
+    centerSub: "카테고리",
     fmtWon: fmt.krw,
+    inside: true,      // Streamlit 처럼 조각 안에 이름 + %
+    size: 340,
   });
 }
 

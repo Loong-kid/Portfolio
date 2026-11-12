@@ -379,3 +379,77 @@ code { background: var(--surface-2); padding: 1px 6px; border-radius: 6px; font-
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .topbar { border-bottom: 1px solid rgba(195, 195, 204, 0.10); } :root:not([data-theme="light"]) .toast { border: 1px solid rgba(175, 178, 206, 0.28); } }
 :root[data-theme="dark"] .topbar { border-bottom: 1px solid rgba(195, 195, 204, 0.10); }
 :root[data-theme="dark"] .toast { border: 1px solid rgba(175, 178, 206, 0.28); }
+
+/* =====================================================================
+   2차: 밤색 히어로 띠 (Mercury 홈 첫 화면처럼 큰 숫자 하나 + 은은한 빛)
+   ===================================================================== */
+.topbar { box-shadow: none; }
+.hero-band {
+  position: relative; overflow: hidden;
+  background:
+    radial-gradient(520px 320px at 88% -10%, rgba(82, 102, 235, 0.42), transparent 70%),
+    radial-gradient(420px 260px at 62% 130%, rgba(156, 180, 232, 0.20), transparent 70%),
+    var(--m-night);
+  color: var(--m-on-dark);
+  padding: 28px 0 40px;
+}
+.hero-band::after { /* 아래 밝은 화면으로 넘어가는 얇은 빛 선 */
+  content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(156, 180, 232, 0.45), transparent);
+}
+.hero-band .wrap { padding-bottom: 0; }
+.hero-grid { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 32px; align-items: end; }
+.eyebrow { font-size: 13px; font-weight: 500; letter-spacing: 0.06em; color: var(--m-fog); }
+.stat { font-size: 64px; font-weight: 420; letter-spacing: 0.005em; line-height: 1.05; margin-top: 10px; color: #fff; }
+.hero-delta { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin-top: 16px; font-size: 15px; color: var(--m-fog); }
+.hero-delta b { font-weight: 480; }
+.hero-delta .dim { color: #9a99aa; }
+.hero-band .up { color: #ff8b8b; }      /* 밤 바탕용 손익 색 (대비 4.5:1↑) */
+.hero-band .down { color: #8fb0ff; }
+.delta-pill { display: inline-flex; align-items: center; gap: 4px; height: 30px; padding: 0 12px; border-radius: var(--pill); font-weight: 480; font-size: 14px; background: rgba(175, 178, 206, 0.16); }
+.delta-pill.up { background: rgba(255, 139, 139, 0.14); }
+.delta-pill.down { background: rgba(143, 176, 255, 0.14); }
+.hero-side { display: grid; grid-template-columns: repeat(2, minmax(140px, auto)); gap: 18px 36px; margin: 0; }
+.hero-side div { min-width: 0; }
+.hero-side dt { font-size: 12px; font-weight: 500; letter-spacing: 0.05em; color: #9a99aa; }
+.hero-side dd { margin: 4px 0 0; font-size: 17px; font-weight: 450; color: var(--m-on-dark); white-space: nowrap; }
+.hero-side dd small { display: block; font-size: 12px; font-weight: 400; color: #9a99aa; margin-top: 2px; }
+.hero-note { margin-top: 22px; padding: 10px 16px; border-radius: var(--radius); background: rgba(243, 207, 122, 0.12); color: #f3cf7a; font-size: 14px; }
+
+/* 제목을 더 크게 (heading-2 쪽으로) */
+.section { margin-top: 36px; }
+.section h2 { font-size: 22px; font-weight: 480; }
+
+/* 현재 포트폴리오: Streamlit 처럼 표(왼쪽) + 도넛(오른쪽) 위에 나란히 */
+.port-top { display: grid; grid-template-columns: minmax(0, 3fr) minmax(300px, 2fr); gap: 24px; align-items: start; }
+.port-table, .port-donut { min-width: 0; }
+.donut-card { padding: 16px 12px; }
+.donut-card .donut-wrap { flex-direction: column; gap: 8px; }
+.donut .d-name { font-size: 12px; font-weight: 450; pointer-events: none; }
+.donut .d-pct { font-size: 11px; }
+.d-legend.compact { flex: none; width: 100%; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+.d-legend.compact:empty { display: none; }
+@media (max-width: 980px) { .port-top { grid-template-columns: 1fr; } }
+@media (max-width: 640px) {
+  .hero-band { padding: 20px 0 28px; }
+  .hero-grid { grid-template-columns: 1fr; gap: 22px; }
+  .stat { font-size: 44px; }
+  .hero-delta { gap: 10px; font-size: 14px; margin-top: 12px; }
+  .hero-side { grid-template-columns: 1fr 1fr; gap: 14px 20px; }
+  .hero-side dd { font-size: 15px; white-space: normal; }
+  .section { margin-top: 28px; }
+  .section h2 { font-size: 19px; }
+}
+/* 밝은 영역 지표 카드(자산 추이 탭 등)는 그대로 연보라 */
+
+/* 3차: 넓은 화면 · 표 압축 · 밤색 카드 안 손익 색 */
+.wrap { max-width: 1400px; }
+.port-top { grid-template-columns: minmax(0, 1fr) 380px; }
+.port-table table.data th, .port-table table.data td { padding: 11px 12px; }
+.port-table table.data { font-size: 13.5px; }
+:root { --hero-up: #ff8b8b; --hero-down: #8fb0ff; }                 /* 낮: 총액·강조 카드가 밤색 */
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --hero-up: #c23030; --hero-down: #1f62c4; } } /* 밤: 카드가 연보라 */
+:root[data-theme="dark"] { --hero-up: #c23030; --hero-down: #1f62c4; }
+.metric.hero .up { color: var(--hero-up); }
+.metric.hero .down { color: var(--hero-down); }
+@media (max-width: 980px) { .port-top { grid-template-columns: 1fr; } }

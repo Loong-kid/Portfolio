@@ -204,7 +204,10 @@ export function donut(container, items, opts = {}) {
     rows = [...head, { name: `기타 (${tail.length})`, frac: tail.reduce((s, r) => s + r.frac, 0), won, members: tail.map((r) => r.name) }];
   }
   rows.forEach((r, i) => { r.color = `var(--cat-${i + 1})`; });
-  const size = 220, R = 100, r0 = 62, cx = size / 2, cy = size / 2;
+  const escX = (t) => String(t ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const size = opts.size || 220, cx = size / 2, cy = size / 2;
+  const R = size * 0.46, r0 = opts.inside ? R * 0.5 : R * 0.62; // 안쪽 글씨 모드는 고리를 두껍게
+  const labeled = new Set();
   const total = rows.reduce((s, r) => s + r.frac, 0) || 1;
   const gap = rows.length > 1 ? 0.012 : 0; // 조각 사이 틈 (라디안 비율)
   let a0 = -Math.PI / 2;
@@ -219,7 +222,18 @@ export function donut(container, items, opts = {}) {
     const [x1, y1] = pt(R, s), [x2, y2] = pt(R, e), [x3, y3] = pt(r0, e), [x4, y4] = pt(r0, s);
     const mid = (s + e) / 2;
     const [lx, ly] = pt((R + r0) / 2, mid);
-    const label = r.frac / total >= 0.07 ? `<text x="${lx}" y="${ly + 4}" text-anchor="middle" class="d-pct" style="fill:${[2, 3, 4].includes(i) ? "#111" : "#fff"}">${Math.round((r.frac / total) * 100)}%</text>` : "";
+    const ink = [2, 3, 4].includes(i) ? "#111" : "#fff"; // 밝은 조각엔 어두운 글씨
+    const share = r.frac / total;
+    let label = "";
+    if (opts.inside && share >= 0.04) {
+      // Streamlit 처럼 조각 안에 이름 + % (좁은 조각은 이름을 줄임)
+      const maxCh = share >= 0.12 ? 10 : share >= 0.05 ? 8 : 5;
+      const nm = r.name.length > maxCh ? r.name.slice(0, maxCh - 1) + "…" : r.name;
+      label = `<text x="${lx}" y="${ly - 2}" text-anchor="middle" class="d-name" style="fill:${ink}">${escX(nm)}</text><text x="${lx}" y="${ly + 13}" text-anchor="middle" class="d-pct" style="fill:${ink}">${(share * 100).toFixed(1)}%</text>`;
+      labeled.add(i);
+    } else if (!opts.inside && share >= 0.07) {
+      label = `<text x="${lx}" y="${ly + 4}" text-anchor="middle" class="d-pct" style="fill:${ink}">${Math.round(share * 100)}%</text>`;
+    }
     return `<path d="M${x1},${y1}A${R},${R} 0 ${large} 1 ${x2},${y2}L${x3},${y3}A${r0},${r0} 0 ${large} 0 ${x4},${y4}Z" style="fill:${r.color}" data-i="${i}"/>${label}`;
   }).join("");
   const pct = (f) => `${((f / total) * 100).toFixed(1)}%`;
@@ -227,13 +241,13 @@ export function donut(container, items, opts = {}) {
     <div class="donut-wrap">
       <div class="donut" role="img" aria-label="카테고리 비중 ${rows.map((r) => `${r.name} ${pct(r.frac)}`).join(", ")}">
         <svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}">${paths}
-          <text x="${cx}" y="${cy - 2}" text-anchor="middle" class="d-center">${opts.center ?? ""}</text>
-          <text x="${cx}" y="${cy + 18}" text-anchor="middle" class="d-sub">${opts.centerSub ?? ""}</text>
+          <text x="${cx}" y="${cy - 2}" text-anchor="middle" class="d-center" style="font-size:${Math.round(size / 12)}px">${escX(opts.center ?? "")}</text>
+          <text x="${cx}" y="${cy + size / 16}" text-anchor="middle" class="d-sub">${escX(opts.centerSub ?? "")}</text>
         </svg>
         <div class="tooltip" hidden></div>
       </div>
-      <ul class="d-legend">${rows.map((r, i) => `
-        <li data-i="${i}" title="${r.members ? r.members.join(", ") : r.name}"><span class="sw" style="background:${r.color}"></span><span class="nm">${r.name}</span>
+      <ul class="d-legend${opts.inside ? " compact" : ""}">${rows.map((r, i) => opts.inside && labeled.has(i) ? "" : `
+        <li data-i="${i}" title="${r.members ? r.members.join(", ") : r.name}"><span class="sw" style="background:${r.color}"></span><span class="nm">${escX(r.name)}</span>
           <b>${pct(r.frac)}</b>${Number.isFinite(r.won) && opts.fmtWon ? `<small>${opts.fmtWon(r.won)}</small>` : ""}</li>`).join("")}
       </ul>
     </div>`;
