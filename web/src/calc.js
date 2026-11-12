@@ -192,6 +192,16 @@ export function businessDays(start, end) {
   return out;
 }
 
+/** 토·일 → 다음 월요일 (pandas BDay(0).rollforward) */
+export function rollToBusinessDay(d) {
+  const t = new Date(d + "T00:00:00Z");
+  const w = t.getUTCDay();
+  if (w === 6) t.setUTCDate(t.getUTCDate() + 2);
+  else if (w === 0) t.setUTCDate(t.getUTCDate() + 1);
+  else return d;
+  return t.toISOString().slice(0, 10);
+}
+
 /** 정렬된 [[date, value]...] 에서 date ≤ d 인 마지막 값. 없으면 undefined. */
 export function lastAtOrBefore(series, d) {
   if (!series || !series.length) return undefined;
@@ -244,8 +254,12 @@ export function computeNavHistory({ snaps, flows, debt, anchors, priceHist, fxHi
     initUnitsN = notNaN(withUnits[0].좌수_순) ? withUnits[0].좌수_순 : initUnitsT;
   }
 
+  // 주말에 적힌 흐름은 다음 영업일(월)로 — 영업일만 도는 루프에서 빠지지 않게
   const dailyFlow = new Map();
-  for (const f of flows) dailyFlow.set(f.날짜, (dailyFlow.get(f.날짜) ?? 0) + flowKrw(f));
+  for (const f of flows) {
+    const d = rollToBusinessDay(f.날짜);
+    dailyFlow.set(d, (dailyFlow.get(d) ?? 0) + flowKrw(f));
+  }
 
   const navAt = (holdings, d) => {
     let total = 0.0;

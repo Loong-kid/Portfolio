@@ -571,7 +571,11 @@ def compute_nav_history(snapshots_df: pd.DataFrame,
     else:
         f = flows_df.copy()
         f["_krw"] = f.apply(flow_krw, axis=1)
-        daily_flow = f.groupby(f["날짜"].dt.normalize())["_krw"].sum()
+        f_days = f["날짜"].dt.normalize()
+        if business_days_only:
+            # 주말에 적힌 흐름은 다음 영업일(월)로 — 영업일만 도는 루프에서 빠지지 않게
+            f_days = f_days.map(lambda d: pd.offsets.BDay(0).rollforward(d))
+        daily_flow = f.groupby(f_days)["_krw"].sum()
 
     def _holdings_at(d: pd.Timestamp) -> pd.DataFrame:
         if not has_snap:
