@@ -11,6 +11,7 @@ const mIdx = (k) => Number(k.slice(0, 4)) * 12 + Number(k.slice(5, 7)) - 1;
 const pos = (x) => isNum(x) && x > 0;
 const parseIn = (s) => { const t = String(s ?? "").replace(/[,\s%]/g, ""); if (t === "") return null; const n = Number(t); return Number.isFinite(n) ? n : NaN; };
 const showIn = (v) => (isNum(v) ? v.toLocaleString("ko-KR", { maximumFractionDigits: 4 }) : "");
+const roundIn = (v) => (Math.abs(v) >= 100 ? Math.round(v) : Math.round(v * 10) / 10).toLocaleString("ko-KR");
 const mult = (v) => (isNum(v) ? `${v.toFixed(1)}배` : "-");
 const pctTxt = (v, d = 1) => (isNum(v) ? `${v >= 0 ? "+" : ""}${(v * 100).toFixed(d)}%` : "-");
 const cls = (v) => (isNum(v) ? (v > 0 ? "up" : v < 0 ? "down" : "") : "");
@@ -46,6 +47,11 @@ function impliedG(cf0, target, r, gT) {
 }
 
 // ---------- 모델 ----------
+const N_Q = 8; // 내 추정 분기 수 (2년)
+const qKey = (i) => `${Math.floor(i / 12)}.${String((i % 12) + 1).padStart(2, "0")}`;
+const near = (list, i) => list.find((x) => x && Math.abs(mIdx(x.k) - i) <= 1) || null;
+const sum4 = (qs, f) => (qs.length === 4 && qs.every((r) => r && isNum(r[f])) ? qs.reduce((a, r) => a + r[f], 0) : NaN);
+
 function lastFour(Q) {
   const q = Q.filter((r) => isNum(r.rev) || isNum(r.oi));
   if (q.length < 4) return null;
@@ -79,17 +85,50 @@ function model(card, inp) {
   const r0 = lastA && pos(lastA.ni) && pos(lastA.oi) ? lastA.ni / lastA.oi : NaN;
   const niRatio = isNum(r0) && r0 > 0.2 && r0 < 1.5 ? r0 : 0.75;
 
-  const est = [1, 2].map((i) => {
-    const year = isNum(inp[`추정${i}_연도`]) ? inp[`추정${i}_연도`] : baseYear + i;
-    const rev = isNum(inp[`추정${i}_매출`]) ? inp[`추정${i}_매출`] * U.div : NaN;
-    const oi = isNum(inp[`추정${i}_영업이익`]) ? inp[`추정${i}_영업이익`] * U.div : NaN;
-    const niIn = isNum(inp[`추정${i}_순이익`]) ? inp[`추정${i}_순이익`] * U.div : NaN;
+  // --- 내 추정: 마지막 실적 분기 다음부터 8개 분기 ---
+  const Qact = fin.quarterly.filter((q) => isNum(q.rev) || isNum(q.oi));
+  const lastQ = Qact[Qact.length - 1];
+  let start = lastQ ? mIdx(lastQ.k) + 3 : NaN;
+  if (lastA && !(start >= mIdx(lastA.k) + 3)) start = mIdx(lastA.k) + 3;
+  if (!isNum(start)) { const t = new Date(); const i = t.getFullYear() * 12 + t.getMonth(); start = i + ((2 - (i % 3)) + 3) % 3; }
+  const fyMi = Number(fyM) - 1;
+  const saved = inp.quarters || [];
+  const consQ = fin.cons?.quarterly || [];
+  const estQ = Array.from({ length: N_Q }, (_, j) => {
+    const i = start + 3 * j, k = qKey(i);
+    const s = saved.find((x) => x.k === k) || near(saved, i) || {};
+    const rev = isNum(s.rev) ? s.rev * U.div : NaN;
+    const oi = isNum(s.oi) ? s.oi * U.div : NaN;
+    const niIn = isNum(s.ni) ? s.ni * U.div : NaN;
     const ni = isNum(niIn) ? niIn : isNum(oi) ? oi * niRatio : NaN;
-    return { i, year, k: `${year}.${fyM}`, rev, oi, ni, niAuto: !isNum(niIn) && isNum(oi), filled: isNum(rev) || isNum(oi) || isNum(niIn) };
+    const fq = Math.floor((((i - fyMi - 1) % 12) + 12) % 12 / 3) + 1; // 결산 기준 몇 분기
+    return { k, i, fq, savedK: s.k, rev, oi, ni, niAuto: !isNum(niIn) && isNum(oi), filled: isNum(rev) || isNum(oi) || isNum(niIn), cons: near(consQ, i), ly: near(Qact, i - 12) };
   });
+  const block = (qs) => {
+    const r = { k: qs[3].k, from: qs[0].k, rev: sum4(qs, "rev"), oi: sum4(qs, "oi"), ni: sum4(qs, "ni"), niAuto: qs.some((q) => q.niAuto) };
+    r.filled = isNum(r.rev) || isNum(r.oi) || isNum(r.ni);
+    return r;
+  };
+  const ntm = block(estQ.slice(0, 4)), ntm2 = block(estQ.slice(4, 8));
+  const span = (b) => `${b.from.slice(2)}~${b.k.slice(2)}`;
+  const roll = [];
+  if (ntm.filled) roll.push({ ...ntm, label: `향후 4분기 (${span(ntm)})`, short: "향후 4분기", prev: cur });
+  if (ntm2.filled) roll.push({ ...ntm2, label: `그다음 4분기 (${span(ntm2)})`, short: "그다음 4분기", prev: ntm.filled ? ntm : null });
+  // 결산연도 합계: 실적 분기 + 내 추정 분기 (4개 분기가 다 있을 때만)
+  const getQ = (i) => near(estQ, i) || near(Qact, i);
+  const myFY = [];
+  for (const q of estQ) {
+    const off = [0, 1, -1].find((d) => (((q.i - d - fyMi) % 12) + 12) % 12 === 0);
+    if (off === undefined) continue;
+    const qs = [q.i - 9, q.i - 6, q.i - 3, q.i].map(getQ);
+    const nEst = qs.filter((x) => x && estQ.includes(x)).length;
+    const r = { k: q.k, year: Math.floor((q.i - off) / 12), nEst, rev: sum4(qs, "rev"), oi: sum4(qs, "oi"), ni: sum4(qs, "ni"), niAuto: qs.some((x) => x?.niAuto) };
+    if (isNum(r.rev) || isNum(r.oi) || isNum(r.ni)) myFY.push(r);
+  }
   const cons = (fin.cons?.annual || []).filter((c) => !lastA || c.k > lastA.k);
   const byK = new Map(A.map((a) => [a.k, a]));
   const prevOf = (k, chain) => chain.find((x) => x && Math.abs(mIdx(x.k) - (mIdx(k) - 12)) <= 1) || null;
+  for (const f of myFY) f.prev = prevOf(f.k, [...myFY, ...A]);
 
   const fwd = (r) => ({
     per: pos(r.ni) ? mcap / r.ni : NaN, perLoss: isNum(r.ni) && r.ni <= 0,
@@ -97,7 +136,7 @@ function model(card, inp) {
     opm: pos(r.rev) && isNum(r.oi) ? r.oi / r.rev : NaN,
   });
 
-  return { ccy, U, conv, shares, px, mcap, netDebt, ev, A, lastA, baseYear, cur, est, cons, niRatio, byK, prevOf, fwd, hasBs };
+  return { ccy, U, conv, shares, px, mcap, netDebt, ev, A, lastA, baseYear, cur, estQ, ntm, ntm2, roll, myFY, Qact, cons, niRatio, byK, prevOf, fwd, hasBs };
 }
 
 // ---------- 화면 ----------
@@ -149,7 +188,14 @@ function draw(v, d) {
   const inp = { ...(card.inputs || {}) };
   for (const k of ["할인율", "영구성장률"]) if (!isNum(inp[k])) inp[k] = null;
   const fin = card.fin, item = card.item;
+  // 분기 입력 상태: 저장된 분기 키가 화면 분기와 한 달 어긋나면 화면 키로 맞춘다 (지난 분기 추정은 그대로 보관)
+  inp.quarters = (inp.quarters || []).map((q) => ({ ...q }));
   const M0 = model(card, inp);
+  for (const q of M0.estQ) {
+    const sv = q.savedK && q.savedK !== q.k ? inp.quarters.find((x) => x.k === q.savedK) : null;
+    if (sv && !inp.quarters.some((x) => x.k === q.k)) sv.k = q.k;
+  }
+  const qState = new Map(inp.quarters.map((q) => [q.k, q]));
   const U = M0.U;
   const dirty = { on: false };
 
@@ -172,21 +218,21 @@ function draw(v, d) {
 
     <div class="val-grid section">
       <div>
-        <h2>내 추정 <span class="sub">${esc(U.label)} · 순이익을 비우면 영업이익 × ${M0.niRatio.toFixed(2)}</span></h2>
+        <h2>내 추정 · 분기 <span class="sub">${esc(U.label)} · 순이익을 비우면 영업이익 × ${M0.niRatio.toFixed(2)}</span></h2>
         <div class="card val-form">
-          <div class="table-wrap edit flat"><table class="data">
-            <thead><tr><th class="l"></th><th>연도</th><th>매출</th><th>영업이익</th><th>순이익</th></tr></thead>
-            <tbody>${[1, 2].map((i) => {
-              const e = M0.est[i - 1];
-              const c = M0.cons.find((x) => x.k.slice(0, 4) === String(e.year));
-              const ph = (f) => (c && isNum(c[f]) ? ` placeholder="컨센 ${Math.round(c[f] / U.div).toLocaleString("ko-KR")}"` : "");
-              return `<tr><td class="l ro">추정 ${i}</td>
-                <td><input class="num" data-f="추정${i}_연도" inputmode="numeric" value="${esc(showIn(inp[`추정${i}_연도`]))}" placeholder="${e.year}" style="width:70px"></td>
-                <td><input class="num" data-f="추정${i}_매출" inputmode="decimal" value="${esc(showIn(inp[`추정${i}_매출`]))}"${ph("rev")}></td>
-                <td><input class="num" data-f="추정${i}_영업이익" inputmode="decimal" value="${esc(showIn(inp[`추정${i}_영업이익`]))}"${ph("oi")}></td>
-                <td><input class="num" data-f="추정${i}_순이익" inputmode="decimal" value="${esc(showIn(inp[`추정${i}_순이익`]))}" placeholder="${c && isNum(c.ni) ? `컨센 ${Math.round(c.ni / U.div).toLocaleString("ko-KR")}` : "자동"}"></td></tr>`;
+          <div class="table-wrap edit flat"><table class="data qform">
+            <thead><tr><th class="l">분기</th><th>매출</th><th>영업이익</th><th>순이익</th></tr></thead>
+            <tbody>${M0.estQ.map((q, j) => {
+              const sv = qState.get(q.k) || {};
+              const hint = (f) => q.cons && isNum(q.cons[f]) ? `컨센 ${roundIn(q.cons[f] / U.div)}` : q.ly && isNum(q.ly[f]) ? `작년 ${roundIn(q.ly[f] / U.div)}` : "";
+              return `<tr class="${j === 4 ? "q-sep" : ""}"><td class="l ro">${q.k.slice(2, 4)}.${q.k.slice(5)} <span class="muted q-tag">${q.fq}Q</span></td>
+                <td><input class="num" data-q="${q.k}" data-qf="rev" inputmode="decimal" value="${esc(showIn(sv.rev))}" placeholder="${esc(hint("rev"))}"></td>
+                <td><input class="num" data-q="${q.k}" data-qf="oi" inputmode="decimal" value="${esc(showIn(sv.oi))}" placeholder="${esc(hint("oi"))}"></td>
+                <td><input class="num" data-q="${q.k}" data-qf="ni" inputmode="decimal" value="${esc(showIn(sv.ni))}" placeholder="${esc(hint("ni") || "자동")}"></td></tr>`;
             }).join("")}</tbody>
+            <tfoot id="qSums"></tfoot>
           </table></div>
+          <p class="caption" style="margin-top:6px">흐린 숫자는 참고값이에요 (컨센서스, 없으면 1년 전 같은 분기 실적). 4개 분기를 다 채우면 합계로 Forward 지표·목표가를 계산해요.</p>
           <div class="form-grid" style="margin-top:14px">
             <label class="field"><span>적정 PER · 약세</span><input class="num" data-f="PER_약세" inputmode="decimal" value="${esc(showIn(inp.PER_약세))}"></label>
             <label class="field"><span>기준</span><input class="num" data-f="PER_기준" inputmode="decimal" value="${esc(showIn(inp.PER_기준))}"></label>
@@ -217,20 +263,34 @@ function draw(v, d) {
   bindPick(v, reload);
   document.getElementById("finRefresh").addEventListener("click", () => reload(item.종목, true));
 
+  const markDirty = () => { if (!dirty.on) { dirty.on = true; document.getElementById("valState").textContent = "저장 안 된 변경 있음"; } };
+  v.querySelectorAll("#valCard [data-q]").forEach((el) => {
+    const k = el.dataset.q, f = el.dataset.qf;
+    el.addEventListener("input", () => {
+      let q = qState.get(k);
+      if (!q) { q = { k }; qState.set(k, q); inp.quarters.push(q); }
+      q[f] = parseIn(el.value);
+      el.classList.toggle("invalid", Number.isNaN(q[f]));
+      markDirty();
+      out();
+    });
+    el.addEventListener("blur", () => { const x = qState.get(k)?.[f]; if (isNum(x)) el.value = showIn(x); });
+  });
   v.querySelectorAll("#valCard [data-f]").forEach((el) => {
     const f = el.dataset.f;
     const isText = el.tagName === "TEXTAREA" || el.tagName === "SELECT";
     el.addEventListener(el.tagName === "SELECT" ? "change" : "input", () => {
       inp[f] = isText ? el.value : parseIn(el.value);
       if (!isText) el.classList.toggle("invalid", Number.isNaN(inp[f]));
-      if (!dirty.on) { dirty.on = true; document.getElementById("valState").textContent = "저장 안 된 변경 있음"; }
+      markDirty();
       out();
     });
-    if (!isText) el.addEventListener("blur", () => { if (isNum(inp[f]) && f !== "추정1_연도" && f !== "추정2_연도") el.value = showIn(inp[f]); });
+    if (!isText) el.addEventListener("blur", () => { if (isNum(inp[f])) el.value = showIn(inp[f]); });
   });
   document.getElementById("valSave").addEventListener("click", async (e) => {
     const b = e.currentTarget;
-    if (Object.values(inp).some((x) => Number.isNaN(x))) { toast("숫자가 아닌 칸이 있어요 (빨간 칸).", "err"); return; }
+    const badQ = inp.quarters.some((q) => ["rev", "oi", "ni"].some((f) => Number.isNaN(q[f])));
+    if (badQ || Object.values(inp).some((x) => Number.isNaN(x))) { toast("숫자가 아닌 칸이 있어요 (빨간 칸).", "err"); return; }
     b.disabled = true; b.textContent = "저장 중…";
     try {
       const r = await api("/api/valuation", { method: "PUT", body: JSON.stringify({ 종목: item.종목, inputs: inp }) });
@@ -246,7 +306,7 @@ function bindPick(v, reload) {
   v.querySelectorAll("[data-pick]").forEach((b) => b.addEventListener("click", () => { store.set("valName", b.dataset.pick); reload(b.dataset.pick); }));
 }
 
-const DCF_BASES = [["FCF", "FCF (최근 4분기)"], ["순이익", "순이익 (최근 4분기)"], ["추정", "추정 1 순이익"]];
+const DCF_BASES = [["FCF", "FCF (최근 4분기)"], ["순이익", "순이익 (최근 4분기)"], ["추정", "내 추정 향후 4분기 순이익"]];
 const defR = (ccy) => (ccy === "KRW" ? 0.1 : 0.09);
 
 function drawOutputs(card, inp) {
@@ -269,11 +329,18 @@ function drawOutputs(card, inp) {
     </div>`;
 
   // --- Forward ---
+  // 분기 입력 아래 합계
+  const sumRow = (label, b) => `<tr><td class="l ro">${label}</td>${["rev", "oi", "ni"].map((f) => `<td class="${isNum(b[f]) ? "" : "muted"}">${amt(b[f])}</td>`).join("")}</tr>`;
+  const qs = document.getElementById("qSums");
+  if (qs) qs.innerHTML = sumRow("향후 4분기", M.ntm) + sumRow("그다음 4분기", M.ntm2);
+
   const rows = [];
   if (cur) rows.push({ label: cur.label, kind: "a", r: cur, prev: null });
+  for (const b of M.roll) rows.push({ label: `${b.label} 내 추정`, kind: "m", r: b, prev: b.prev });
   for (const c of M.cons) rows.push({ label: `${c.k.slice(0, 4)} 컨센서스`, kind: "c", r: c, prev: M.prevOf(c.k, [...M.cons, ...M.A]) });
-  const est = M.est.filter((e) => e.filled);
-  for (const e of est) rows.push({ label: `${e.year} 내 추정 ${e.i}`, kind: "m", r: e, prev: M.prevOf(e.k, [...est, ...M.A]) });
+  const fyLabel = (f) => `${f.year} 내 추정${f.nEst < 4 ? ` (실적 ${4 - f.nEst}+추정 ${f.nEst}분기)` : ""}`;
+  for (const f of M.myFY) rows.push({ label: fyLabel(f), kind: "m", r: f, prev: f.prev });
+  const est = [...M.roll.map((b) => ({ ...b, tl: b.short })), ...M.myFY.map((f) => ({ ...f, tl: `${f.year} 연간` }))];
   const tgt = [["약세", inp.PER_약세], ["기준", inp.PER_기준], ["강세", inp.PER_강세]].filter(([, x]) => pos(x));
   const tPrice = (per, e) => (pos(e.ni) && pos(M.mcap) ? (M.px * per * e.ni) / M.mcap : NaN);
   document.getElementById("valFwd").innerHTML = `
@@ -286,26 +353,26 @@ function drawOutputs(card, inp) {
         <td>${isNum(f.opm) ? (f.opm * 100).toFixed(1) + "%" : "-"}</td>
         <td><b>${f.perLoss ? "적자" : mult(f.per)}</b></td><td>${mult(f.evebit)}</td><td>${mult(f.psr)}</td></tr>`; }).join("")}</tbody>
     </table></div>
-    ${!est.length ? `<p class="caption">내 추정 매출·영업이익을 넣으면 여기 Forward PER·EV/EBIT 가 나와요.</p>` : ""}`;
+    ${!est.length ? `<p class="caption">내 추정 분기 4개를 채우면 여기 Forward PER·EV/EBIT 가 나와요.</p>` : ""}`;
+  const estT = est.filter((e) => pos(e.ni));
   document.getElementById("valTgt").innerHTML = `
     <h2>목표가 <span class="sub">적정 PER × 추정 순이익 ÷ 주식수</span></h2>
-    ${tgt.length && est.length ? `<div class="table-wrap"><table class="data">
-      <thead><tr><th class="l">시나리오</th><th>PER</th>${est.map((e) => `<th>${e.year} 기준</th><th>상승여력</th>`).join("")}</tr></thead>
-      <tbody>${tgt.map(([l, per]) => `<tr><td class="l">${l}</td><td>${per}배</td>${est.map((e) => { const t = tPrice(per, e); return `<td><b>${pxTxt(t)}</b></td><td class="${cls(t / M.px - 1)}">${pctTxt(t / M.px - 1)}</td>`; }).join("")}</tr>`).join("")}</tbody>
-    </table></div>` : `<div class="empty card">내 추정과 적정 PER(약세·기준·강세 중 하나 이상)을 넣으면 목표가가 나와요.</div>`}`;
+    ${tgt.length && estT.length ? `<div class="table-wrap"><table class="data tgt">
+      <thead><tr><th class="l">기준 순이익</th>${tgt.map(([l, per]) => `<th>${l}<div class="th-sub">PER ${per}배</div></th>`).join("")}</tr></thead>
+      <tbody>${estT.map((e) => `<tr><td class="l">${esc(e.tl)}<div class="th-sub">${amt(e.ni)}${e.niAuto ? " · 자동 포함" : ""}</div></td>${tgt.map(([, per]) => { const t = tPrice(per, e); return `<td><b>${pxTxt(t)}</b><div class="${cls(t / M.px - 1)}" style="font-size:12px">${pctTxt(t / M.px - 1)}</div></td>`; }).join("")}</tr>`).join("")}</tbody>
+    </table></div>` : `<div class="empty card">내 추정 분기 4개와 적정 PER(약세·기준·강세 중 하나 이상)을 넣으면 목표가가 나와요.</div>`}`;
 
   // --- 역DCF ---
   const r = isNum(inp.할인율) ? inp.할인율 / 100 : defR(M.ccy);
   const gT = isNum(inp.영구성장률) ? inp.영구성장률 / 100 : 0.025;
-  const e1 = M.est[0];
   let base = inp.DCF_기준 || (cur && pos(cur.fcf) ? "FCF" : "순이익");
-  const baseCf = { FCF: cur?.fcf, 순이익: cur?.ni, 추정: e1.ni }[base];
+  const baseCf = { FCF: cur?.fcf, 순이익: cur?.ni, 추정: M.ntm.ni }[base];
   const target = base === "FCF" ? M.ev : M.mcap;
   const res = impliedG(baseCf, target, r, gT);
   const lastIdx = M.lastA ? mIdx(M.lastA.k) : 0;
   const a3 = M.A.find((a) => Math.abs(mIdx(a.k) - (lastIdx - 36)) <= 1);
   const cagr = (f) => (a3 && M.lastA && pos(a3[f]) && pos(M.lastA[f]) ? (M.lastA[f] / a3[f]) ** (1 / 3) - 1 : NaN);
-  const myG = e1.filled && M.lastA && pos(M.lastA.rev) && pos(e1.rev) ? e1.rev / M.lastA.rev - 1 : NaN;
+  const myG = cur && pos(cur.rev) && pos(M.ntm.rev) ? M.ntm.rev / cur.rev - 1 : NaN;
   const sens = [-0.02, -0.01, 0, 0.01, 0.02].map((dr) => ({ r: r + dr, x: impliedG(baseCf, target, r + dr, gT) }));
   const gTxt = (x) => (!x ? "-" : x.edge === "below" ? "-50% 미만" : x.edge === "above" ? "+150% 초과" : pctTxt(x.g));
   document.getElementById("valDcf").innerHTML = `
@@ -314,14 +381,14 @@ function drawOutputs(card, inp) {
         <div class="metric hero"><div class="label">시장이 가정한 연 성장률 (10년)</div><div class="value">${gTxt(res)}</div><div class="delta">기준 ${amt(baseCf)} → 10년 뒤 ${res.edge ? "-" : amt(baseCf * (1 + res.g) ** 10)} ${esc(U.label)}</div></div>
         <div class="metric"><div class="label">과거 3년 매출 CAGR</div><div class="value ${cls(cagr("rev"))}">${pctTxt(cagr("rev"))}</div><div class="delta muted">${a3 ? `${esc(a3.k)} → ${esc(M.lastA.k)}` : "실적 3년치 부족"}</div></div>
         <div class="metric"><div class="label">과거 3년 영업이익 CAGR</div><div class="value ${cls(cagr("oi"))}">${pctTxt(cagr("oi"))}</div></div>
-        <div class="metric"><div class="label">내 추정 1 매출 성장</div><div class="value ${cls(myG)}">${pctTxt(myG)}</div><div class="delta muted">${esc(M.lastA?.k || "")} 실적 대비</div></div>
+        <div class="metric"><div class="label">내 추정 매출 성장 (향후 4분기)</div><div class="value ${cls(myG)}">${pctTxt(myG)}</div><div class="delta muted">${cur ? esc(cur.label) : ""} 대비</div></div>
       </div>
       <div class="table-wrap" style="margin-top:12px"><table class="data">
         <thead><tr><th class="l">할인율</th>${sens.map((x) => `<th>${(x.r * 100).toFixed(1)}%</th>`).join("")}</tr></thead>
         <tbody><tr><td class="l">내재 성장률</td>${sens.map((x) => `<td class="${x.r === r ? "hl" : ""}">${gTxt(x.x)}</td>`).join("")}</tr></tbody>
       </table></div>
       <p class="caption">할인율 ${(r * 100).toFixed(1)}% · 10년 뒤 영구성장 ${(gT * 100).toFixed(1)}%. 시장 가정이 과거 성장률이나 내 추정보다 높으면 기대가 이미 주가에 많이 들어가 있다는 뜻이에요.</p>`
-      : `<div class="notice warn">${!pos(baseCf) ? `기준 현금흐름(${esc(base)})이 0 이하라 역DCF를 계산할 수 없어요. 기준을 바꾸거나 내 추정 1 을 넣어 보세요.` : !pos(target) ? "시가총액/EV 를 계산할 수 없어요 (가격·주식수 확인)." : "할인율이 영구성장률보다 커야 해요."}</div>`}
+      : `<div class="notice warn">${!pos(baseCf) ? `기준 현금흐름(${esc(base)})이 0 이하이거나 비어 있어서 역DCF를 계산할 수 없어요. 기준을 바꾸거나 내 추정 분기 4개를 채워 보세요.` : !pos(target) ? "시가총액/EV 를 계산할 수 없어요 (가격·주식수 확인)." : "할인율이 영구성장률보다 커야 해요."}</div>`}
     </div>`;
 
   // --- 성장률·가속도 ---
@@ -335,30 +402,32 @@ function growthTables(card, M, amt) {
   const colsA = M.A.slice(-6).map((a) => ({ label: a.k.slice(0, 4), sub: (a.k.slice(5) === "12" ? "실적" : `실적 (${a.k.slice(5)}월 결산)`) + (isKr && a.src === "yahoo" ? " · Yahoo" : ""), kind: "a", ...a }));
   const chainA = [...M.A];
   for (const c of M.cons) colsA.push({ label: c.k.slice(0, 4), sub: "컨센서스", kind: "c", ...c });
-  const est = M.est.filter((e) => e.filled);
-  for (const e of est) colsA.push({ label: String(e.year), sub: `내 추정 ${e.i}`, kind: "m", ...e });
+  const est = M.myFY;
+  for (const e of est) colsA.push({ label: String(e.year), sub: e.nEst < 4 ? `내 추정 (실적 ${4 - e.nEst}+${e.nEst}분기)` : "내 추정", kind: "m", ...e });
   const prevA = (c) => (c.kind === "a" ? M.prevOf(c.k, chainA) : c.kind === "c" ? M.prevOf(c.k, [...M.cons, ...chainA]) : M.prevOf(c.k, [...est, ...chainA]));
   for (const c of colsA) {
     const p = prevA(c);
     c.gRev = p ? growth(p.rev, c.rev) : null; c.gOi = p ? growth(p.oi, c.oi) : null;
-    const pp = p ? prevA({ ...p, kind: p.kind || (M.cons.includes(p) ? "c" : est.includes(p) ? "m" : "a") }) : null;
+    const pp = p ? prevA({ ...p, kind: M.cons.includes(p) ? "c" : est.includes(p) ? "m" : "a" }) : null;
     c.aRev = p && pp ? accel(c.gRev, growth(pp.rev, p.rev)) : null;
     c.aOi = p && pp ? accel(c.gOi, growth(pp.oi, p.oi)) : null;
     c.opm = pos(c.rev) && isNum(c.oi) ? c.oi / c.rev : NaN;
     c.dOpm = p && pos(p.rev) && isNum(p.oi) && isNum(c.opm) ? c.opm - p.oi / p.rev : NaN;
   }
 
-  // 분기: 저장된 분기 (최근 8개) → 컨센서스 분기
-  const Qall = fin.quarterly.filter((q) => isNum(q.rev) || isNum(q.oi));
-  const consQ = (fin.cons?.quarterly || []).filter((c) => !Qall.length || c.k > Qall[Qall.length - 1].k).map((c) => ({ ...c, e: true }));
-  const chainQ = [...Qall, ...consQ];
-  const at = (k, back) => chainQ.find((x) => Math.abs(mIdx(x.k) - (mIdx(k) - back)) <= 1) || null;
-  const colsQ = [...Qall.slice(-8), ...consQ].map((q) => {
+  // 분기: 저장된 실적 분기 (최근 8개) → 컨센서스 분기 → 내 추정 분기. 성장률은 각자 실적에 이어 붙인 줄에서 계산
+  const Qall = M.Qact;
+  const consQ = (fin.cons?.quarterly || []).filter((c) => !Qall.length || c.k > Qall[Qall.length - 1].k).map((c) => ({ ...c, kind: "c" }));
+  const myQ = M.estQ.filter((q) => q.filled).map((q) => ({ ...q, kind: "m" }));
+  const chains = { a: Qall, c: [...Qall, ...consQ], m: [...Qall, ...myQ] };
+  const colsQ = [...Qall.slice(-8).map((q) => ({ ...q, kind: "a" })), ...consQ, ...myQ].map((q) => {
+    const chainQ = chains[q.kind];
+    const at = (k, back) => chainQ.find((x) => Math.abs(mIdx(x.k) - (mIdx(k) - back)) <= 1) || null;
     const y = at(q.k, 12), p = at(q.k, 3), py = p ? at(p.k, 12) : null;
     const gR = y ? growth(y.rev, q.rev) : null, gO = y ? growth(y.oi, q.oi) : null;
     const opm = pos(q.rev) && isNum(q.oi) ? q.oi / q.rev : NaN;
     return {
-      ...q, label: `${q.k.slice(2, 4)}.${q.k.slice(5)}`, sub: q.e ? "컨센서스" : q.d ? "연간−분기 계산" : "실적",
+      ...q, label: `${q.k.slice(2, 4)}.${q.k.slice(5)}`, sub: q.kind === "c" ? "컨센서스" : q.kind === "m" ? "내 추정" : q.d ? "연간−분기 계산" : "실적",
       yRev: gR, yOi: gO,
       aRev: p && py ? accel(gR, growth(py.rev, p.rev)) : null, aOi: p && py ? accel(gO, growth(py.oi, p.oi)) : null,
       qRev: p ? growth(p.rev, q.rev) : null, qOi: p ? growth(p.oi, q.oi) : null,

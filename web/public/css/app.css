@@ -491,3 +491,15 @@ table.gtable td.sticky { color: var(--text-2); font-weight: 450; }
 td.hl { font-weight: 500; background: var(--surface-2); }
 .val-form .table-wrap.edit input.num { min-width: 78px; }
 .val-form .table-wrap.edit td:first-child { white-space: nowrap; }
+/* 분기 추정 입력 */
+table.qform .q-tag { font-size: 11px; margin-left: 2px; }
+table.qform tr.q-sep td { border-top: 1px solid var(--line-strong); }
+table.qform tfoot td { border-top: 1px solid var(--line-strong); font-weight: 500; font-variant-numeric: tabular-nums; text-align: right; padding: 7px 10px; background: var(--surface-2); }
+table.qform tfoot td.l { text-align: left; font-weight: 450; color: var(--text-2); white-space: nowrap; }
+table.qform tfoot tr + tr td { border-top: 0; }
+table.tgt .th-sub { font-size: 11px; font-weight: 400; color: var(--text-3); margin-top: 2px; }
+@media (max-width: 600px) {
+  .val-form .table-wrap.edit table.qform input.num { min-width: 0; width: 100%; }
+  table.qform td, table.qform th { padding-left: 4px; padding-right: 4px; }
+  table.qform .q-tag { display: none; }
+}

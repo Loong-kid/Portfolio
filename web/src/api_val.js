@@ -10,11 +10,12 @@ import { Budget } from "./prices.js";
 // 금액 칸 단위: 재무 통화가 KRW 면 억원, 그 외는 백만 (USD·EUR·JPY …). 할인율·영구성장률은 % 숫자.
 export const VAL_COLS = [
   "종목",
-  "추정1_연도", "추정1_매출", "추정1_영업이익", "추정1_순이익",
-  "추정2_연도", "추정2_매출", "추정2_영업이익", "추정2_순이익",
   "PER_약세", "PER_기준", "PER_강세",
   "할인율", "영구성장률", "DCF_기준", "주식수", "메모", "업데이트일",
 ];
+// 분기 추정은 따로 한 줄씩: 종목 · 분기(결산월 YYYY.MM) · 매출 · 영업이익 · 순이익
+export const Q_COLS = ["종목", "분기", "매출", "영업이익", "순이익"];
+const Q_F = { 매출: "rev", 영업이익: "oi", 순이익: "ni" };
 const TEXT = new Set(["종목", "DCF_기준", "메모", "업데이트일"]);
 const s = (v) => String(v ?? "").trim();
 const num = (v) => (typeof v === "number" ? v : C.toNum(String(v ?? "").replace(/,/g, "")));
@@ -47,6 +48,25 @@ function parseRow(r) {
   return o;
 }
 
+/** 분기 표기 정리: "2026.12" · "2026-12" · "202612" → "2026.12" */
+function normQ(v) {
+  const m = s(v).replace(/^'/, "").match(/^(\d{4})[.\-/ ]?(\d{1,2})$/);
+  if (!m || +m[2] < 1 || +m[2] > 12) return null;
+  return `${m[1]}.${m[2].padStart(2, "0")}`;
+}
+function parseQuarters(rows, name) {
+  const out = [];
+  for (const r of rows) {
+    if (s(r["종목"]) !== name) continue;
+    const k = normQ(r["분기"]);
+    if (!k) continue;
+    const q = { k };
+    for (const [c, f] of Object.entries(Q_F)) { const v = num(r[c]); q[f] = Number.isNaN(v) ? null : v; }
+    out.push(q);
+  }
+  return out.sort((a, b) => (a.k < b.k ? -1 : 1));
+}
+
 export async function handleVal(req, env, ctx, url, p) {
   const path = url.pathname, m = req.method;
   if (path !== "/api/valuation") return null;
@@ -63,7 +83,7 @@ export async function handleVal(req, env, ctx, url, p) {
     const [finR, px, vt] = await Promise.all([
       getFundamentals(env, item.심볼, { force, budget: new Budget(8) }).then((f) => ({ f }), (e) => ({ e: String(e.message || e) })),
       loadPrices(env),
-      readTabs(env, p.sheet, ["valuation"]), // 내 추정은 캐시 말고 시트 원본
+      readTabs(env, p.sheet, ["valuation", "valuation_q"]), // 내 추정은 캐시 말고 시트 원본
     ]);
     const row = vt.valuation.find((r) => s(r["종목"]) === item.종목);
     const cur = px.current.prices[item.심볼];
@@ -75,7 +95,7 @@ export async function handleVal(req, env, ctx, url, p) {
         fx: currentFx(px),
         fin: finR.f || null,
         finError: finR.e || null,
-        inputs: parseRow(row),
+        inputs: { ...(parseRow(row) || {}), quarters: parseQuarters(vt.valuation_q, item.종목) },
       },
     };
   }
@@ -91,11 +111,31 @@ export async function handleVal(req, env, ctx, url, p) {
       if (TEXT.has(c)) row[c] = s(inp[c]);
       else { const v = num(inp[c]); row[c] = Number.isNaN(v) ? "" : v; }
     }
+    // 분기 추정: 숫자가 하나라도 있는 분기만
+    const qs = [];
+    for (const q of Array.isArray(inp.quarters) ? inp.quarters.slice(0, 80) : []) {
+      const k = normQ(q?.k);
+      if (!k) continue;
+      const qr = { 종목: name, 분기: `'${k}` }; // 작은따옴표: 시트가 2026.10 을 숫자 2026.1 로 바꾸지 않게
+      let any = false;
+      for (const [c, f] of Object.entries(Q_F)) {
+        const v = num(q[f]);
+        if (Number.isNaN(v) && s(q[f]) !== "") throw bad(`${k} ${c} 칸이 숫자가 아니에요.`);
+        qr[c] = Number.isNaN(v) ? "" : v;
+        if (!Number.isNaN(v)) any = true;
+      }
+      if (any) qs.push(qr);
+    }
     await ensureTab(env, p.sheet, "valuation");
-    const vt = await readTabs(env, p.sheet, ["valuation"]);
+    await ensureTab(env, p.sheet, "valuation_q");
+    const vt = await readTabs(env, p.sheet, ["valuation", "valuation_q"]);
     const rows = vt.valuation.filter((r) => s(r["종목"]) && s(r["종목"]) !== name); // 다른 종목은 시트 그대로
     rows.push(row);
     await writeTab(env, p.sheet, "valuation", VAL_COLS, rows);
+    const keep = vt.valuation_q
+      .filter((r) => s(r["종목"]) && s(r["종목"]) !== name)
+      .map((r) => ({ ...r, 분기: normQ(r["분기"]) ? `'${normQ(r["분기"])}` : r["분기"] }));
+    await writeTab(env, p.sheet, "valuation_q", Q_COLS, [...keep, ...qs.sort((a, b) => (a.분기 < b.분기 ? -1 : 1))]);
     return { ok: true, 업데이트일: today };
   }
   return null;
