@@ -148,21 +148,40 @@ export async function renderValuation(v) {
   try { d = await api(`/api/valuation${V.name ? `?name=${encodeURIComponent(V.name)}` : ""}`); }
   catch (e) { if (v.dataset.tok === tok) v.innerHTML = `<div class="notice err">${esc(e.message)}</div>`; return; }
   if (v.dataset.tok !== tok) return;
-  if (!d.items.length) { v.innerHTML = `<div class="empty">분석할 종목이 없어요 (보유 종목이나 관찰 종목을 먼저 추가해 주세요).</div>`; return; }
   draw(v, d);
 }
 
+/** 매수 희망가까지 거리: 희망가 ÷ 현재가 − 1 (0 이상이면 도달) */
+const hopeGap = (i) => (isNum(i.현재가) && pos(i.매수_희망가) ? i.매수_희망가 / i.현재가 - 1 : NaN);
+
 function picker(items, sel) {
   const group = (g) => items.filter((i) => i.구분 === g);
-  const chips = (list) => list.map((i) => `<button class="chip" data-pick="${esc(i.종목)}" aria-pressed="${i.종목 === sel}">${esc(i.종목)}</button>`).join("");
+  const chip = (i) => {
+    const g = hopeGap(i);
+    const tag = !isNum(g) ? "" : g >= 0 ? `<span class="chip-hit">희망가 도달</span>` : `<span class="chip-gap">${(g * 100).toFixed(1)}%</span>`;
+    const tip = isNum(g) ? `매수 희망가 ${i.매수_희망가.toLocaleString("ko-KR")} · 현재가 ${i.현재가.toLocaleString("ko-KR")}` : "";
+    return `<button class="chip" data-pick="${esc(i.종목)}" aria-pressed="${i.종목 === sel}" title="${esc(tip)}">${esc(i.종목)}${tag}</button>`;
+  };
   return `<div class="val-pick">
-    ${group("보유").length ? `<div class="pick-row"><span class="pick-label">보유</span><div class="chips">${chips(group("보유"))}</div></div>` : ""}
-    ${group("관찰").length ? `<div class="pick-row"><span class="pick-label">관찰</span><div class="chips">${chips(group("관찰"))}</div></div>` : ""}
+    ${group("보유").length ? `<div class="pick-row"><span class="pick-label">보유</span><div class="chips">${group("보유").map(chip).join("")}</div></div>` : ""}
+    <div class="pick-row"><span class="pick-label">보유 예정</span><div class="chips">${group("보유 예정").map(chip).join("")}<button class="chip chip-add" id="addOpen" aria-expanded="false">+ 종목 추가</button></div></div>
+    <form class="card add-form" id="addForm" hidden>
+      <label class="field"><span>종목명</span><input name="종목" placeholder="예: 엔비디아" required></label>
+      <label class="field"><span>티커 · 종목코드</span><input name="심볼" placeholder="NVDA · 005930 · 8725.T · AIXA.DE" required autocapitalize="characters"></label>
+      <label class="field"><span>통화</span><select name="통화"><option value="">자동</option><option>KRW</option><option>USD</option><option>EUR</option><option>JPY</option></select></label>
+      <button class="btn primary" type="submit">추가</button>
+      <p class="caption" style="flex-basis:100%;margin:0">한국은 6자리 종목코드만 넣어도 돼요 (코스피·코스닥 자동). 미국은 티커, 일본은 코드+.T, 유럽은 Yahoo 표기(.DE · .PA · .AS · .L). 넣으면 실제 가격을 조회해서 확인해요.</p>
+    </form>
   </div>`;
 }
 
 function draw(v, d) {
   const card = d.card;
+  if (!d.items.length) {
+    v.innerHTML = `${picker([], null)}<div id="valCard"><div class="empty">분석할 종목이 없어요. '+ 종목 추가'로 보유 예정 종목을 넣어 보세요.</div></div>`;
+    bindPick(v, (name) => renderValuationNamed(v, name));
+    return;
+  }
   const sel = card?.item?.종목;
   V.name = sel; store.set("valName", sel);
   const head = picker(d.items, sel);
@@ -185,9 +204,11 @@ function draw(v, d) {
     const S = saver(item, inp);
     v.innerHTML = `${head}<div id="valCard">
       <div class="section val-head"><div><h2 style="margin:0">${esc(item.종목)} <span class="sub">${esc(item.심볼)} · ${esc(item.구분)}</span></h2></div></div>
+      ${headExtras(card, inp)}
       ${paneSeg()}
       <div id="paneF" hidden><div class="notice err">재무 데이터를 못 받았어요${card.finError ? `: ${esc(card.finError)}` : ""}<br><span class="muted">ETF·펀드는 재무제표가 없어서 펀더멘털 분석은 안 돼요. 기술적 분석은 볼 수 있어요.</span></div></div>
       <div id="paneT" hidden></div></div>`;
+    bindHeadExtras(v, card, inp, S, reload);
     setupPanes(v, card, inp, S, "T");
     bindPick(v, reload);
     return;
@@ -225,6 +246,7 @@ function draw(v, d) {
       </div>
       <button class="btn ghost sm" id="finRefresh">재무 다시 받기</button>
     </div>
+    ${headExtras(card, inp)}
     ${paneSeg()}
     <div id="paneF" hidden>
     ${fin.warn ? `<div class="notice warn">${esc(fin.warn)}</div>` : ""}
@@ -315,6 +337,7 @@ function draw(v, d) {
     el.dispatchEvent(new Event("input"));
   });
   S.bind(v.querySelector("#paneF"));
+  bindHeadExtras(v, card, inp, S, reload);
   setupPanes(v, card, inp, S);
 }
 
@@ -368,6 +391,73 @@ function setupPanes(v, card, inp, S, force) {
 
 function bindPick(v, reload) {
   v.querySelectorAll("[data-pick]").forEach((b) => b.addEventListener("click", () => { store.set("valName", b.dataset.pick); reload(b.dataset.pick); }));
+  const open = v.querySelector("#addOpen"), form = v.querySelector("#addForm");
+  open?.addEventListener("click", () => {
+    form.hidden = !form.hidden;
+    open.setAttribute("aria-expanded", String(!form.hidden));
+    if (!form.hidden) form.querySelector("input")?.focus();
+  });
+  form?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const f = new FormData(form), btn = form.querySelector("button[type=submit]");
+    btn.disabled = true; btn.textContent = "확인 중…";
+    try {
+      const r = await api("/api/valuation/item", { method: "POST", body: JSON.stringify({ 종목: f.get("종목"), 심볼: f.get("심볼"), 통화: f.get("통화") }) });
+      toast(r.status === "added" ? `'${r.종목}' 추가 (${r.심볼} · ${r.통화})` : `'${r.종목}'은 이미 있어서 심볼만 ${r.심볼} 로 맞췄어요`);
+      store.set("valName", r.종목);
+      reload(r.종목);
+    } catch (err) { toast(err.message, "err"); btn.disabled = false; btn.textContent = "추가"; }
+  });
+}
+
+async function renderValuationNamed(v, name) {
+  V.name = name;
+  try { const d = await api(`/api/valuation?name=${encodeURIComponent(name)}`); draw(v, d); }
+  catch (e) { v.innerHTML = `<div class="notice err">${esc(e.message)}</div>`; }
+}
+
+/** 카드 머리: 매수 희망가 (두 화면 공통) + 보유 예정이면 빼기 버튼 */
+function headExtras(card, inp) {
+  const item = card.item;
+  return `<div class="val-buy">
+    <label class="field"><span>매수 희망가 <small>${esc(item.통화)}</small></span><input class="num" data-h="매수_희망가" inputmode="decimal" value="${esc(showIn(inp.매수_희망가))}" placeholder="이 가격 이하면 진입"></label>
+    <div class="buy-gap" id="buyGap"></div>
+    ${item.구분 === "보유 예정" ? `<button class="btn ghost sm" id="itemRemove">보유 예정에서 빼기</button>` : ""}
+  </div>`;
+}
+
+function bindHeadExtras(v, card, inp, S, reload) {
+  const item = card.item, px = card.price?.p;
+  const gapBox = v.querySelector("#buyGap");
+  const show = () => {
+    const h = inp.매수_희망가;
+    if (!pos(h) || !isNum(px)) { gapBox.innerHTML = `<span class="muted">현재가 ${isNum(px) ? fmt.price(px, item.통화) : "-"}</span>`; return; }
+    const g = h / px - 1;
+    gapBox.innerHTML = g >= 0
+      ? `<span class="buy-hit">희망가 도달</span> <span class="muted">현재가 ${fmt.price(px, item.통화)} · 희망가 이하</span>`
+      : `<span class="muted">현재가 ${fmt.price(px, item.통화)} · 희망가까지</span> <b class="down">${(g * 100).toFixed(1)}%</b>`;
+  };
+  show();
+  const el = v.querySelector('[data-h="매수_희망가"]');
+  el.addEventListener("input", () => {
+    inp.매수_희망가 = parseIn(el.value);
+    el.classList.toggle("invalid", Number.isNaN(inp.매수_희망가));
+    S.markDirty();
+    show();
+    v.querySelector("#paneT")?.dispatchEvent(new Event("inp-change"));
+  });
+  el.addEventListener("blur", () => { if (isNum(inp.매수_희망가)) el.value = showIn(inp.매수_희망가); });
+  v.querySelector("#itemRemove")?.addEventListener("click", async (e) => {
+    const b = e.currentTarget;
+    if (!confirm(`'${item.종목}'을 보유 예정 목록에서 뺄까요? 넣어 둔 추정·손절 설정은 시트에 남아서, 다시 추가하면 그대로 나와요.`)) return;
+    b.disabled = true;
+    try {
+      await api(`/api/valuation/item?name=${encodeURIComponent(item.종목)}`, { method: "DELETE" });
+      toast(`'${item.종목}' 뺐어요`);
+      store.set("valName", null); V.name = null;
+      reload("");
+    } catch (err) { toast(err.message, "err"); b.disabled = false; }
+  });
 }
 
 const DCF_BASES = [["FCF", "FCF (최근 4분기)"], ["순이익", "순이익 (최근 4분기)"], ["추정", "내 추정 향후 4분기 순이익"]];

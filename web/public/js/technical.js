@@ -129,14 +129,21 @@ export function analyze(bars, inp, item) {
   mom.score = [mom.r1, mom.r3, mom.r6, mom.r12].filter(isNum);
   mom.pos = mom.score.filter((x) => x > 0).length;
 
-  // 진입: 직접 넣은 날짜 → 최근 골든크로스 → 6개월 전
+  // 진입: 직접 넣은 날짜 → (보유 예정이면 "지금 산다면") → 최근 골든크로스 → 6개월 전
+  const own = item.구분 === "보유" && isNum(item.평균단가) && item.평균단가 > 0;
+  const dateSet = /^\d{4}-\d{2}-\d{2}$/.test(inp.진입일 || "");
+  const planned = item.구분 !== "보유" && !dateSet; // 아직 안 산 종목: 지금 기준 손절선
   let ei = -1, eSrc = "";
-  if (/^\d{4}-\d{2}-\d{2}$/.test(inp.진입일 || "")) { ei = d.findIndex((x) => x >= inp.진입일); eSrc = "직접 입력"; }
+  if (dateSet) { ei = d.findIndex((x) => x >= inp.진입일); eSrc = "직접 입력"; }
+  if (ei < 0 && planned) { ei = L; eSrc = "보유 예정 — 지금 산다고 보고"; }
   if (ei < 0 && lastGolden) { ei = lastGolden.i; eSrc = "최근 골든크로스"; }
   if (ei < 0) { ei = Math.max(0, n - 126); eSrc = "진입 신호 없음 — 6개월 전부터"; }
-  const own = item.구분 === "보유" && isNum(item.평균단가) && item.평균단가 > 0;
-  const ePrice = isNum(inp.진입가) && inp.진입가 > 0 ? inp.진입가 : own ? item.평균단가 : c[ei];
-  const ePriceSrc = isNum(inp.진입가) && inp.진입가 > 0 ? "직접 입력" : own ? "보유 평균단가" : "진입일 종가";
+  const hope = isNum(inp.매수_희망가) && inp.매수_희망가 > 0 ? inp.매수_희망가 : NaN;
+  const [ePrice, ePriceSrc] = isNum(inp.진입가) && inp.진입가 > 0 ? [inp.진입가, "직접 입력"]
+    : own ? [item.평균단가, "보유 평균단가"]
+    : isNum(hope) ? [hope, "매수 희망가"]
+    : planned ? [c[L], "현재가"]
+    : [c[ei], "진입일 종가"];
 
   // 손절선 (방식별, 진입일부터)
   const blank = () => new Array(n).fill(NaN);
@@ -152,13 +159,18 @@ export function analyze(bars, inp, item) {
     stops.저점 = s; }
   { const s = blank(); for (let i = ei; i < n; i++) s[i] = ePrice * (1 - S.비율); stops.비율 = s; }
   { const s = blank(); if (isNum(S.가격)) for (let i = ei; i < n; i++) s[i] = S.가격; stops.가격 = s; }
+  if (planned) {
+    // 지금 진입가(희망가)에 산다면: ATR 은 진입가 − k×ATR, 나머지는 지금 값. 차트엔 최근 1개월만 수평선으로
+    const now = { ATR: ePrice - S.atrK * a14[L], 이평: stops.이평[L], 저점: stops.저점[L], 비율: ePrice * (1 - S.비율), 가격: S.가격 };
+    for (const k of Object.keys(stops)) { const s = blank(); if (isNum(now[k])) for (let i = Math.max(0, n - 21); i < n; i++) s[i] = now[k]; stops[k] = s; }
+  }
   const sel = stops[S.방식];
   const stopNow = sel[L];
-  // 진입 뒤 종가가 손절선 아래로 처음 내려간 날들
+  // 진입 뒤 종가가 손절선 아래로 처음 내려간 날들 (보유 예정은 아직 진입 전이라 없음)
   const breaks = [];
-  for (let i = ei + 1; i < n; i++) if (isNum(sel[i]) && isNum(sel[i - 1]) && c[i] < sel[i] && c[i - 1] >= sel[i - 1]) breaks.push(i);
+  if (!planned) for (let i = ei + 1; i < n; i++) if (isNum(sel[i]) && isNum(sel[i - 1]) && c[i] < sel[i] && c[i - 1] >= sel[i - 1]) breaks.push(i);
 
-  return { S, d, h, l, c, n, L, sS, sL, a14, r14, M, regime, crosses, lastCross, lastGolden, chk, verdict, mom, ei, eSrc, ePrice, ePriceSrc, own, stops, sel, stopNow, breaks };
+  return { S, d, h, l, c, n, L, sS, sL, a14, r14, M, regime, crosses, lastCross, lastGolden, chk, verdict, mom, ei, eSrc, ePrice, ePriceSrc, own, planned, hope, stops, sel, stopNow, breaks };
 }
 
 // ---------- 화면 ----------
@@ -238,8 +250,11 @@ export async function renderTech(pane, card, inp, hooks) {
     drawTop(document.getElementById("taTop"), A, P);
     drawCharts(A, P);
     drawStops(A, P, card);
+    const ep = pane.querySelector('[data-t="진입가"]');
+    if (ep) ep.placeholder = `${P(A.ePrice)} (${A.ePriceSrc})`;
   };
   draw();
+  pane.addEventListener("inp-change", draw); // 머리의 매수 희망가가 바뀌면 진입가 기본값도 바뀜
 
   pane.querySelector("#taRange").addEventListener("click", (e) => {
     const b = e.target.closest("[data-r]"); if (!b) return;
@@ -358,20 +373,25 @@ function drawStops(A, P, card) {
   const waitTxt = A.verdict && A.verdict.dir < 0 && A.eSrc !== "직접 입력"
     ? ` · 지금은 하락 국면이라 새 진입 신호가 없어요. ${A.S.단기}일선이 ${A.S.장기}일선을 위로 뚫으면(골든크로스) 상승 추세 진입으로 봐요.` : "";
   document.getElementById("taEntryNote").textContent =
-    `진입일 ${A.d[A.ei]} (${A.eSrc}) · 진입가 ${P(A.ePrice)} (${A.ePriceSrc}) · 진입 뒤 ${pct(px / A.ePrice - 1)}${waitTxt}`;
+    A.planned
+      ? `보유 예정 — 진입가 ${P(A.ePrice)} (${A.ePriceSrc})에 지금 산다고 보고 계산 · 현재가 대비 ${pct(A.ePrice / px - 1)}${waitTxt}`
+      : `진입일 ${A.d[A.ei]} (${A.eSrc}) · 진입가 ${P(A.ePrice)} (${A.ePriceSrc}) · 진입 뒤 ${pct(px / A.ePrice - 1)}${waitTxt}`;
   const item = card.item, s = A.stopNow;
   const rate = item.통화 === "KRW" ? 1 : card.fx?.[item.통화];
   const qty = A.own ? item.수량 : NaN;
   const lossKrw = isNum(qty) && isNum(s) && isNum(rate) ? (s - px) * qty * rate : NaN;
-  const broken = isNum(s) && px < s;
+  const broken = !A.planned && isNum(s) && px < s;
+  const conflict = A.planned && isNum(s) && A.ePrice <= s;
   document.getElementById("taStopSum").innerHTML = !isNum(s)
     ? `<div class="notice warn">이 방식으로는 손절선을 계산할 수 없어요 (값을 넣거나 진입일을 확인해 주세요).</div>`
     : `<div class="ta-sum-row ${broken ? "broken" : ""}">
         <div><div class="label">내 손절선</div><div class="big">${P(s)}</div></div>
         <div><div class="label">현재가 ${P(px)} 대비</div><div class="big ${broken ? "" : "down"}">${pct(s / px - 1)}</div></div>
-        <div><div class="label">진입가 대비</div><div class="big ${cls(s / A.ePrice - 1)}">${pct(s / A.ePrice - 1)}</div></div>
+        <div><div class="label">${A.planned ? `진입가 ${P(A.ePrice)}에 사면 손절까지` : "진입가 대비"}</div><div class="big ${cls(s / A.ePrice - 1)}">${pct(s / A.ePrice - 1)}</div></div>
         ${isNum(lossKrw) && !broken ? `<div><div class="label">손절 시 평가액 변화 (${fmt.qty(qty)}주)</div><div class="big ${cls(lossKrw)}">${fmt.krw(lossKrw)}</div></div>` : ""}
       </div>
       ${broken ? `<div class="notice err" style="margin-top:10px">종가가 손절선 아래에 있어요 — 정해 둔 기준으로는 하락 추세로 꺾인 상태예요.</div>` : ""}
+      ${conflict ? `<div class="notice warn" style="margin-top:10px">진입가(${P(A.ePrice)})가 손절선보다 낮거나 같아요 — 그 가격까지 내려오면 이 기준으로는 이미 추세가 꺾인 상태라, 진입 조건과 손절 조건이 부딪혀요. 희망가나 손절 방식을 다시 봐 주세요.</div>` : ""}
+      ${A.planned ? `<p class="caption">보유 예정이라 진입가에 지금 산다고 보고 계산했어요. 실제로 사면 진입일을 넣거나, 스냅샷에 들어가는 순간 보유 기준(평균단가·진입 뒤 최고가 추적)으로 바뀌어요.</p>` : ""}
       ${A.breaks.length ? `<p class="caption">진입 뒤 손절선 이탈 ${A.breaks.length}번${A.breaks.length > 6 ? " · 최근 6번" : ""}: ${A.breaks.slice(-6).map((i) => A.d[i]).join(", ")} (차트의 파란 마름모)</p>` : ""}`;
 }

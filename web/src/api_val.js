@@ -2,11 +2,11 @@
 // 계산(Forward 지표·목표가·Reverse DCF·성장률)은 입력하는 대로 바로 보이게 화면에서 한다.
 import * as C from "./calc.js";
 import { readTabs, writeTab, ensureTab } from "./google.js";
-import { loadSheet, loadPrices } from "./store.js";
+import { loadSheet, loadPrices, loadSheetFresh } from "./store.js";
 import { currentFx } from "./api_view.js";
 import { getFundamentals } from "./fundamentals.js";
 import { getBars, withLive } from "./technical.js";
-import { Budget } from "./prices.js";
+import { Budget, getJson, fetchCurrent } from "./prices.js";
 
 // 금액 칸 단위: 재무 통화가 KRW 면 억원, 그 외는 백만 (USD·EUR·JPY …). 할인율·영구성장률은 % 숫자.
 export const VAL_COLS = [
@@ -14,7 +14,7 @@ export const VAL_COLS = [
   "PER_약세", "PER_기준", "PER_강세",
   "할인율", "영구성장률", "DCF_기준", "주식수",
   // 기술적 분석: 이동평균 기간, 진입, 손절 방식(ATR·이평·저점·비율·가격)과 각 방식의 값
-  "TA_단기", "TA_장기", "진입일", "진입가",
+  "TA_단기", "TA_장기", "진입일", "진입가", "매수_희망가",
   "손절_방식", "손절_ATR배수", "손절_이평", "손절_여유", "손절_저점일", "손절_비율", "손절_가격",
   "메모", "업데이트일",
 ];
@@ -41,7 +41,7 @@ function items(tabs, today) {
     const t = s(w["종목"]);
     if (!t || seen.has(t)) continue;
     seen.add(t);
-    out.push({ 종목: t, 심볼: tmap[t] || "", 통화: s(w["통화"]) || "KRW", 구분: "관찰" });
+    out.push({ 종목: t, 심볼: tmap[t] || "", 통화: s(w["통화"]) || "KRW", 구분: "보유 예정" });
   }
   return out;
 }
@@ -72,6 +72,15 @@ function parseQuarters(rows, name) {
   return out.sort((a, b) => (a.k < b.k ? -1 : 1));
 }
 
+const CCYS = ["KRW", "USD", "EUR", "JPY"];
+/** 심볼 확인: Yahoo 차트 메타로 가격·통화 */
+async function probe(sym) {
+  const j = await getJson(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?range=5d&interval=1d`, new Budget(1));
+  const meta = j.chart?.result?.[0]?.meta;
+  if (!meta || !(Number(meta.regularMarketPrice) > 0)) throw new Error("가격 없음");
+  return { sym, ccy: meta.currency || "", p: Number(meta.regularMarketPrice) };
+}
+
 export async function handleVal(req, env, ctx, url, p) {
   const path = url.pathname, m = req.method;
   const today = C.todayKst();
@@ -89,6 +98,42 @@ export async function handleVal(req, env, ctx, url, p) {
     const cur = px.current.prices[item.심볼];
     return { sym: item.심볼, at: ta.at, warn: ta.warn || null, bars: withLive(ta.bars, cur) };
   }
+  // 보유 예정 종목 추가: 심볼을 실제로 조회해 확인하고 통화도 거기서 알아낸다
+  if (path === "/api/valuation/item" && m === "POST") {
+    const body = await req.json().catch(() => ({}));
+    const name = s(body.종목);
+    let raw = s(body.심볼).toUpperCase().replace(/\s+/g, "");
+    if (!name) throw bad("종목명을 넣어 주세요.");
+    if (!raw) throw bad("심볼(티커)이나 종목코드를 넣어 주세요.");
+    const cands = /^\d{6}$/.test(raw) ? [`${raw}.KS`, `${raw}.KQ`] : [raw];
+    let hit = null;
+    for (const c of cands) { hit = await probe(c).catch(() => null); if (hit) break; }
+    if (!hit) throw bad(`'${raw}' 의 가격을 찾지 못했어요. 표기를 확인해 주세요 (예: NVDA · 005930.KS · 8725.T · AIXA.DE).`);
+    const ccy = s(body.통화) || hit.ccy;
+    if (!CCYS.includes(ccy)) throw bad(`이 종목의 통화(${hit.ccy || "알 수 없음"})는 아직 지원하지 않아요 (KRW·USD·EUR·JPY).`);
+    const tabs = await readTabs(env, p.sheet, ["snapshots", "ticker_map", "watchlist"]);
+    const latest = C.snapshotAtOrBefore(C.loadSnapshots(tabs.snapshots), today);
+    if (latest && latest.rows.some((r) => r.종목 === name)) throw bad(`'${name}'은 이미 보유 종목이에요.`);
+    const tmap = C.loadMap(tabs.ticker_map, "종목", "yfinance_symbol");
+    tmap[name] = hit.sym;
+    await writeTab(env, p.sheet, "ticker_map", C.SCHEMAS.ticker_map, Object.keys(tmap).sort().map((k) => ({ 종목: k, yfinance_symbol: tmap[k] })));
+    const exists = tabs.watchlist.some((r) => s(r["종목"]) === name);
+    if (!exists) {
+      await writeTab(env, p.sheet, "watchlist", C.SCHEMAS.watchlist, [...tabs.watchlist, { 종목: name, 통화: ccy, 목표가_상단: "", 목표가_하단: "", 업사이드_메모: "", 다운사이드_메모: "", 업데이트일: today }]);
+    }
+    await loadSheetFresh(env, p);
+    return { ok: true, 종목: name, 심볼: hit.sym, 통화: ccy, status: exists ? "exists" : "added" };
+  }
+  // 보유 예정에서 빼기 (관찰 목록에서만 지움 — 심볼·내 추정은 남겨서 다시 넣으면 그대로)
+  if (path === "/api/valuation/item" && m === "DELETE") {
+    const name = s(url.searchParams.get("name"));
+    const tabs = await readTabs(env, p.sheet, ["watchlist"]);
+    const rows = tabs.watchlist.filter((r) => s(r["종목"]) && s(r["종목"]) !== name);
+    if (rows.length === tabs.watchlist.filter((r) => s(r["종목"])).length) throw bad("보유 예정 목록에 없는 종목이에요.");
+    await writeTab(env, p.sheet, "watchlist", C.SCHEMAS.watchlist, rows);
+    await loadSheetFresh(env, p);
+    return { ok: true };
+  }
   if (path !== "/api/valuation") return null;
 
   if (m === "GET") {
@@ -105,7 +150,15 @@ export async function handleVal(req, env, ctx, url, p) {
       readTabs(env, p.sheet, ["valuation", "valuation_q"]), // 내 추정은 캐시 말고 시트 원본
     ]);
     const row = vt.valuation.find((r) => s(r["종목"]) === item.종목);
-    const cur = px.current.prices[item.심볼];
+    let cur = px.current.prices[item.심볼];
+    if (!cur) cur = (await fetchCurrent([item.심볼], {}, new Budget(2)).catch(() => ({})))[item.심볼]; // 막 추가한 종목: 크론 전이라 바로 조회
+    const hope = new Map(vt.valuation.map((r) => [s(r["종목"]), num(r["매수_희망가"])]));
+    for (const i of list) {
+      const c = i === item ? cur : px.current.prices[i.심볼];
+      i.현재가 = c?.p ?? null;
+      const h = hope.get(i.종목);
+      i.매수_희망가 = Number.isNaN(h) || h == null ? null : h;
+    }
     return {
       items: list,
       card: {

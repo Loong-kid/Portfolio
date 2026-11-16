@@ -541,3 +541,19 @@ table.ta-stops tr.sel td:first-child { box-shadow: inset 3px 0 0 var(--accent); 
 .ta-sum-row { display: flex; flex-wrap: wrap; gap: 14px 32px; padding: 14px 16px; border-radius: var(--radius); background: var(--surface-2); }
 .ta-sum-row .label { font-size: 12px; color: var(--text-3); }
 .ta-sum-row .big { font-size: 20px; font-weight: 520; font-variant-numeric: tabular-nums; margin-top: 2px; }
+
+/* ---------- 보유 예정 · 매수 희망가 ---------- */
+.chip .chip-gap { margin-left: 6px; font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.chip[aria-pressed="true"] .chip-gap { color: inherit; opacity: .8; }
+.chip .chip-hit { margin-left: 6px; font-size: 11px; font-weight: 500; padding: 1px 6px; border-radius: var(--pill); background: color-mix(in srgb, var(--up) 14%, transparent); color: var(--up); }
+.chip[aria-pressed="true"] .chip-hit { background: rgba(255, 255, 255, .22); color: inherit; }
+.chip.chip-add { border: 1px dashed var(--line-strong); background: transparent; color: var(--accent-text); }
+.add-form { display: flex; flex-wrap: wrap; gap: 12px 14px; align-items: flex-end; padding: 14px 16px; margin-top: 4px; }
+.add-form .field { flex: 1 1 180px; }
+.add-form select { height: 38px; }
+.val-buy { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 16px; margin: 12px 0 16px; }
+.add-form[hidden] { display: none; }
+.val-buy .field { flex: 0 1 200px; }
+.val-buy .buy-gap { padding-bottom: 9px; font-size: 14px; font-variant-numeric: tabular-nums; }
+.val-buy #itemRemove { margin-left: auto; margin-bottom: 4px; }
+.buy-hit { font-size: 12px; font-weight: 500; padding: 2px 8px; border-radius: var(--pill); background: color-mix(in srgb, var(--up) 14%, transparent); color: var(--up); }

@@ -369,7 +369,7 @@ function renderNotes(v) {
   const d = S.data, admin = S.me.role === "admin";
   v.innerHTML = `
     <div class="section"><h2>보유 종목 <span class="sub">목표가와 메모 · 팔고 나면 자동으로 숨겨져요</span></h2><div id="notesBox">${admin ? "" : notesTable(d.notes, true, false)}</div></div>
-    <div class="section"><h2>관찰 종목 <span class="sub">갖고 있진 않지만 지켜보는 종목</span></h2><div id="wlBox">${admin ? "" : notesTable(d.watchlist, false, true)}</div></div>`;
+    <div class="section"><h2>보유 예정 · 관찰 종목 <span class="sub">갖고 있진 않지만 지켜보는 종목 · 종목 분석 탭에서도 추가할 수 있어요</span></h2><div id="wlBox">${admin ? "" : notesTable(d.watchlist, false, true)}</div></div>`;
   if (admin) {
     if (d.notes.length) notesEditor(document.getElementById("notesBox"), d.notes, ctx);
     else document.getElementById("notesBox").innerHTML = `<div class="empty">보유 종목이 없어요</div>`;
