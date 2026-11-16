@@ -2,8 +2,9 @@
 // 계산은 전부 여기서 한다 (입력하는 대로 바로 바뀌게). 저장은 시트 valuation 탭.
 import { esc, isNum, fmt, api, store } from "./util.js";
 import { toast } from "./edit.js";
+import { renderTech } from "./technical.js";
 
-const V = { name: store.get("valName", null) };
+const V = { name: store.get("valName", null), pane: store.get("valPane", "F") };
 
 // ---------- 숫자 ----------
 const unitOf = (ccy) => (ccy === "KRW" ? { div: 1e8, label: "억원" } : { div: 1e6, label: `백만 ${ccy}` });
@@ -177,6 +178,20 @@ function draw(v, d) {
     } catch (e) { if (box) box.innerHTML = `<div class="notice err">${esc(e.message)}</div>`; }
   };
 
+  if (card && !card.error && !card.fin && card.item?.심볼) {
+    // 재무가 없어도 (ETF 등) 기술적 분석은 된다
+    const item = card.item;
+    const inp = prepInputs(card);
+    const S = saver(item, inp);
+    v.innerHTML = `${head}<div id="valCard">
+      <div class="section val-head"><div><h2 style="margin:0">${esc(item.종목)} <span class="sub">${esc(item.심볼)} · ${esc(item.구분)}</span></h2></div></div>
+      ${paneSeg()}
+      <div id="paneF" hidden><div class="notice err">재무 데이터를 못 받았어요${card.finError ? `: ${esc(card.finError)}` : ""}<br><span class="muted">ETF·펀드는 재무제표가 없어서 펀더멘털 분석은 안 돼요. 기술적 분석은 볼 수 있어요.</span></div></div>
+      <div id="paneT" hidden></div></div>`;
+    setupPanes(v, card, inp, S, "T");
+    bindPick(v, reload);
+    return;
+  }
   if (!card || card.error || !card.fin) {
     v.innerHTML = `${head}<div id="valCard">${card?.error || card?.finError
       ? `<div class="notice ${card.error ? "warn" : "err"}">${esc(card.error || `재무 데이터를 못 받았어요: ${card.finError}`)}<br><span class="muted">ETF·펀드는 재무제표가 없어서 분석할 수 없어요.</span></div>`
@@ -185,11 +200,9 @@ function draw(v, d) {
     return;
   }
 
-  const inp = { ...(card.inputs || {}) };
-  for (const k of ["할인율", "영구성장률"]) if (!isNum(inp[k])) inp[k] = null;
+  const inp = prepInputs(card);
   const fin = card.fin, item = card.item;
   // 분기 입력 상태: 저장된 분기 키가 화면 분기와 한 달 어긋나면 화면 키로 맞춘다 (지난 분기 추정은 그대로 보관)
-  inp.quarters = (inp.quarters || []).map((q) => ({ ...q }));
   const M0 = model(card, inp);
   for (const q of M0.estQ) {
     const sv = q.savedK && q.savedK !== q.k ? inp.quarters.find((x) => x.k === q.savedK) : null;
@@ -197,7 +210,7 @@ function draw(v, d) {
   }
   const qState = new Map(inp.quarters.map((q) => [q.k, q]));
   const U = M0.U;
-  const dirty = { on: false };
+  const S = saver(item, inp);
 
   v.innerHTML = `${head}
   <div id="valCard">
@@ -212,6 +225,8 @@ function draw(v, d) {
       </div>
       <button class="btn ghost sm" id="finRefresh">재무 다시 받기</button>
     </div>
+    ${paneSeg()}
+    <div id="paneF" hidden>
     ${fin.warn ? `<div class="notice warn">${esc(fin.warn)}</div>` : ""}
     ${!isNum(M0.conv) ? `<div class="notice warn">주가 통화(${esc(item.통화)})와 재무 통화(${esc(M0.ccy)})가 달라서 환산을 못 해요. 시가총액 기반 지표는 비어 보여요. (ADR 이면 주식수 칸에 ADR 환산 주식수를 넣어 주세요.)</div>` : ""}
     <div id="valNow"></div>
@@ -242,10 +257,7 @@ function draw(v, d) {
             <label class="field"><span>주식수 <small>비우면 자동</small></span><input class="num" data-f="주식수" inputmode="numeric" value="${esc(showIn(inp.주식수))}" placeholder="${isNum(fin.bs?.shares) ? fin.bs.shares.toLocaleString("ko-KR") : ""}"></label>
           </div>
           <label class="field" style="display:flex;margin-top:12px"><span>메모 <small>투자 논지 · 틀렸다고 볼 조건</small></span><textarea data-f="메모" rows="3">${esc(inp.메모 || "")}</textarea></label>
-          <div class="toolbar actions">
-            <button class="btn primary" id="valSave">저장</button>
-            <span class="muted" id="valState" style="font-size:13px">${inp.업데이트일 ? `마지막 저장 ${esc(inp.업데이트일)}` : "아직 저장 안 함"}</span>
-          </div>
+          ${S.saveBtn()}
         </div>
       </div>
       <div id="valTgt"></div>
@@ -262,6 +274,8 @@ function draw(v, d) {
       <div id="valDcf"></div>
     </div>
     <div id="valGrowth"></div>
+    </div>
+    <div id="paneT" hidden></div>
   </div>`;
 
   const out = () => drawOutputs(card, inp);
@@ -269,7 +283,7 @@ function draw(v, d) {
   bindPick(v, reload);
   document.getElementById("finRefresh").addEventListener("click", () => reload(item.종목, true));
 
-  const markDirty = () => { if (!dirty.on) { dirty.on = true; document.getElementById("valState").textContent = "저장 안 된 변경 있음"; } };
+  const markDirty = S.markDirty;
   v.querySelectorAll("#valCard [data-q]").forEach((el) => {
     const k = el.dataset.q, f = el.dataset.qf;
     el.addEventListener("input", () => {
@@ -300,19 +314,56 @@ function draw(v, d) {
     el.value = c.dataset.r;
     el.dispatchEvent(new Event("input"));
   });
-  document.getElementById("valSave").addEventListener("click", async (e) => {
-    const b = e.currentTarget;
+  S.bind(v.querySelector("#paneF"));
+  setupPanes(v, card, inp, S);
+}
+
+function prepInputs(card) {
+  const inp = { ...(card.inputs || {}) };
+  for (const k of ["할인율", "영구성장률"]) if (!isNum(inp[k])) inp[k] = null;
+  inp.quarters = (inp.quarters || []).map((q) => ({ ...q }));
+  return inp;
+}
+
+/** 저장: 펀더멘털·기술적 분석 두 화면이 같은 입력(inp)을 같이 저장한다 */
+function saver(item, inp) {
+  const st = { dirty: false };
+  const states = () => document.querySelectorAll(".val-state");
+  const stateTxt = () => (st.dirty ? "저장 안 된 변경 있음" : inp.업데이트일 ? `마지막 저장 ${inp.업데이트일}` : "아직 저장 안 함");
+  const markDirty = () => { if (!st.dirty) { st.dirty = true; states().forEach((e) => (e.textContent = stateTxt())); } };
+  const saveBtn = () => `<div class="toolbar actions"><button class="btn primary" data-save>저장</button><span class="muted val-state" style="font-size:13px">${esc(stateTxt())}</span></div>`;
+  const save = async (b) => {
     const badQ = inp.quarters.some((q) => ["rev", "oi", "ni"].some((f) => Number.isNaN(q[f])));
     if (badQ || Object.values(inp).some((x) => Number.isNaN(x))) { toast("숫자가 아닌 칸이 있어요 (빨간 칸).", "err"); return; }
     b.disabled = true; b.textContent = "저장 중…";
     try {
       const r = await api("/api/valuation", { method: "PUT", body: JSON.stringify({ 종목: item.종목, inputs: inp }) });
-      inp.업데이트일 = r.업데이트일; dirty.on = false;
-      document.getElementById("valState").textContent = `마지막 저장 ${r.업데이트일}`;
+      inp.업데이트일 = r.업데이트일; st.dirty = false;
+      states().forEach((e) => (e.textContent = stateTxt()));
       toast("저장했어요");
     } catch (err) { toast(err.message, "err"); }
     b.disabled = false; b.textContent = "저장";
-  });
+  };
+  const bind = (root) => root?.querySelectorAll("[data-save]").forEach((b) => b.addEventListener("click", () => save(b)));
+  return { markDirty, saveBtn, bind };
+}
+
+const paneSeg = () => `<div class="pane-seg"><div class="seg" id="paneSeg"><button data-p="F">펀더멘털</button><button data-p="T">기술적 분석</button></div></div>`;
+
+function setupPanes(v, card, inp, S, force) {
+  const paneF = v.querySelector("#paneF"), paneT = v.querySelector("#paneT");
+  let techDone = false;
+  const show = (p, remember = true) => {
+    if (remember) { V.pane = p; store.set("valPane", p); }
+    paneF.hidden = p !== "F"; paneT.hidden = p !== "T";
+    v.querySelectorAll("#paneSeg button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.p === p));
+    if (p === "T" && !techDone) {
+      techDone = true;
+      renderTech(paneT, card, inp, { dirty: S.markDirty, saveBtn: S.saveBtn, bind: S.bind });
+    }
+  };
+  v.querySelector("#paneSeg").addEventListener("click", (e) => { const b = e.target.closest("[data-p]"); if (b) show(b.dataset.p); });
+  show(force || V.pane, !force);
 }
 
 function bindPick(v, reload) {

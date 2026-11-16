@@ -5,18 +5,23 @@ import { readTabs, writeTab, ensureTab } from "./google.js";
 import { loadSheet, loadPrices } from "./store.js";
 import { currentFx } from "./api_view.js";
 import { getFundamentals } from "./fundamentals.js";
+import { getBars, withLive } from "./technical.js";
 import { Budget } from "./prices.js";
 
 // 금액 칸 단위: 재무 통화가 KRW 면 억원, 그 외는 백만 (USD·EUR·JPY …). 할인율·영구성장률은 % 숫자.
 export const VAL_COLS = [
   "종목",
   "PER_약세", "PER_기준", "PER_강세",
-  "할인율", "영구성장률", "DCF_기준", "주식수", "메모", "업데이트일",
+  "할인율", "영구성장률", "DCF_기준", "주식수",
+  // 기술적 분석: 이동평균 기간, 진입, 손절 방식(ATR·이평·저점·비율·가격)과 각 방식의 값
+  "TA_단기", "TA_장기", "진입일", "진입가",
+  "손절_방식", "손절_ATR배수", "손절_이평", "손절_여유", "손절_저점일", "손절_비율", "손절_가격",
+  "메모", "업데이트일",
 ];
 // 분기 추정은 따로 한 줄씩: 종목 · 분기(결산월 YYYY.MM) · 매출 · 영업이익 · 순이익
 export const Q_COLS = ["종목", "분기", "매출", "영업이익", "순이익"];
 const Q_F = { 매출: "rev", 영업이익: "oi", 순이익: "ni" };
-const TEXT = new Set(["종목", "DCF_기준", "메모", "업데이트일"]);
+const TEXT = new Set(["종목", "DCF_기준", "메모", "업데이트일", "진입일", "손절_방식"]);
 const s = (v) => String(v ?? "").trim();
 const num = (v) => (typeof v === "number" ? v : C.toNum(String(v ?? "").replace(/,/g, "")));
 const bad = (msg) => { const e = new Error(msg); e.status = 400; return e; };
@@ -30,7 +35,7 @@ function items(tabs, today) {
   for (const r of latest ? latest.rows : []) {
     if (!tradable(r.종목) || seen.has(r.종목)) continue;
     seen.add(r.종목);
-    out.push({ 종목: r.종목, 심볼: tmap[r.종목] || "", 통화: r.통화 || "KRW", 구분: "보유" });
+    out.push({ 종목: r.종목, 심볼: tmap[r.종목] || "", 통화: r.통화 || "KRW", 구분: "보유", 수량: r.수량, 평균단가: r.평균단가 });
   }
   for (const w of tabs.watchlist) {
     const t = s(w["종목"]);
@@ -69,8 +74,22 @@ function parseQuarters(rows, name) {
 
 export async function handleVal(req, env, ctx, url, p) {
   const path = url.pathname, m = req.method;
-  if (path !== "/api/valuation") return null;
   const today = C.todayKst();
+
+  // 기술적 분석: 일봉 (종목 목록에 있는 것만)
+  if (path === "/api/valuation/ta" && m === "GET") {
+    const sheet = await loadSheet(env, ctx, p);
+    const item = items(sheet.tabs, today).find((i) => i.종목 === url.searchParams.get("name"));
+    if (!item) throw bad("목록에 없는 종목이에요.");
+    if (!item.심볼) throw bad("설정 탭에서 이 종목의 심볼(티커)을 먼저 넣어 주세요.");
+    const [ta, px] = await Promise.all([
+      getBars(env, item.심볼, { force: url.searchParams.get("refresh") === "1", budget: new Budget(4) }),
+      loadPrices(env),
+    ]);
+    const cur = px.current.prices[item.심볼];
+    return { sym: item.심볼, at: ta.at, warn: ta.warn || null, bars: withLive(ta.bars, cur) };
+  }
+  if (path !== "/api/valuation") return null;
 
   if (m === "GET") {
     const sheet = await loadSheet(env, ctx, p);

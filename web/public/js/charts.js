@@ -46,7 +46,9 @@ function dateTicks(x0, x1, maxTicks) {
  * opts: {
  *   series: [{name, color:"var(--series-1)", points:[[YYYY-MM-DD, v]], dash?, step?, fill?, width?}],
  *   markers?: {name, color, points},
- *   ref?: {y, label},
+ *   ref?: {y, label}, refs?: [{y, label}],
+ *   bands?: [{from, to, color}]  (배경 구간 음영 — 날짜 YYYY-MM-DD),
+ *   yMin?, yMax?  (축에 꼭 들어갈 값),
  *   height?, yFormat(v), tipFormat(v), includeZero?
  * }
  */
@@ -83,8 +85,11 @@ export function lineChart(container, opts) {
     let ys = [];
     for (const s of opts.series) for (const [, v] of s.points) if (Number.isFinite(v)) ys.push(v);
     if (opts.markers) for (const [, v] of opts.markers.points) if (Number.isFinite(v)) ys.push(v);
-    if (opts.ref) ys.push(opts.ref.y);
+    const refs = [...(opts.ref ? [opts.ref] : []), ...(opts.refs || [])];
+    for (const r of refs) ys.push(r.y);
     if (opts.includeZero) ys.push(0);
+    if (Number.isFinite(opts.yMin)) ys.push(opts.yMin);
+    if (Number.isFinite(opts.yMax)) ys.push(opts.yMax);
     if (!ys.length || !base.length) { box.insertAdjacentHTML("afterbegin", `<div class="empty">표시할 데이터가 없어요</div>`); return; }
     const { lo, hi, ticks } = niceTicks(Math.min(...ys), Math.max(...ys), H < 220 ? 3 : 5);
     const labelW = Math.max(...ticks.map((v) => yFmt(v).length)) * 6.6 + 10;
@@ -94,6 +99,10 @@ export function lineChart(container, opts) {
     const Y = (v) => m.t + (1 - (v - lo) / (hi - lo || 1)) * (H - m.t - m.b);
 
     const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, height: H, role: "img", "aria-label": opts.series.map((s) => s.name).join(", ") });
+    for (const b of opts.bands || []) {
+      const xa = Math.max(m.l, X(t(b.from))), xb = Math.min(W - m.r, X(t(b.to)));
+      if (xb > xa) el("rect", { x: xa, y: m.t, width: xb - xa, height: H - m.t - m.b, style: `fill:${b.color};stroke:none` }, svg);
+    }
     const gAxis = el("g", { class: "axis" }, svg);
     for (const v of ticks) {
       el("line", { class: "gridline", x1: m.l, x2: W - m.r, y1: Y(v), y2: Y(v) }, gAxis);
@@ -105,10 +114,10 @@ export function lineChart(container, opts) {
       const tx = el("text", { x: X(ms), y: H - 6, "text-anchor": "middle" }, gAxis);
       tx.textContent = dt.fmt(ms);
     }
-    if (opts.ref) {
-      el("line", { class: "ref", x1: m.l, x2: W - m.r, y1: Y(opts.ref.y), y2: Y(opts.ref.y) }, svg);
-      const rl = el("text", { class: "ref-label", x: W - m.r - 4, y: Y(opts.ref.y) - 5, "text-anchor": "end" }, svg);
-      rl.textContent = opts.ref.label;
+    for (const r of refs) {
+      el("line", { class: "ref", x1: m.l, x2: W - m.r, y1: Y(r.y), y2: Y(r.y) }, svg);
+      const rl = el("text", { class: "ref-label", x: W - m.r - 4, y: Y(r.y) - 5, "text-anchor": "end" }, svg);
+      rl.textContent = r.label;
     }
     if (lo < 0 && hi > 0) el("line", { class: "baseline", x1: m.l, x2: W - m.r, y1: Y(0), y2: Y(0) }, svg);
 
