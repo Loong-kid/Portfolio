@@ -1,4 +1,4 @@
-// 종목 분석 (관리자 전용): 재무 실적 + 내 추정 → Forward 지표 · 목표가 · 역DCF · 성장률과 가속도.
+// 종목 분석 (관리자 전용): 재무 실적 + 내 추정 → Forward 지표 · 목표가 · Reverse DCF · 성장률과 가속도.
 // 계산은 전부 여기서 한다 (입력하는 대로 바로 바뀌게). 저장은 시트 valuation 탭.
 import { esc, isNum, fmt, api, store } from "./util.js";
 import { toast } from "./edit.js";
@@ -30,7 +30,7 @@ const accel = (g1, g0) => (g1 && g0 && isNum(g1.v) && isNum(g0.v) ? g1.v - g0.v 
 const aCell = (a) => (isNum(a) ? `<span class="${cls(a)}">${a > 0 ? "▲" : a < 0 ? "▼" : ""} ${Math.abs(a * 100).toFixed(1)}%p</span>` : `<span class="muted">-</span>`);
 const ppCell = (a) => (isNum(a) ? `<span class="${cls(a)}">${a >= 0 ? "+" : ""}${(a * 100).toFixed(1)}%p</span>` : `<span class="muted">-</span>`);
 
-// ---------- 역DCF ----------
+// ---------- Reverse DCF ----------
 // 10년간 연 g 성장 + 이후 영구성장 gT. 기준 현금흐름 cf0, 할인율 r. 값 = target 이 되는 g 를 이분법으로.
 function pvAt(cf0, g, r, gT, n = 10) {
   let v = 0, cf = cf0;
@@ -239,9 +239,6 @@ function draw(v, d) {
             <label class="field"><span>강세</span><input class="num" data-f="PER_강세" inputmode="decimal" value="${esc(showIn(inp.PER_강세))}"></label>
           </div>
           <div class="form-grid" style="margin-top:12px">
-            <label class="field"><span>할인율 %</span><input class="num" data-f="할인율" inputmode="decimal" value="${esc(showIn(inp.할인율))}" placeholder="${defR(M0.ccy) * 100}"></label>
-            <label class="field"><span>영구성장률 %</span><input class="num" data-f="영구성장률" inputmode="decimal" value="${esc(showIn(inp.영구성장률))}" placeholder="2.5"></label>
-            <label class="field"><span>역DCF 기준</span><select data-f="DCF_기준">${DCF_BASES.map(([k, l]) => `<option value="${k}" ${inp.DCF_기준 === k ? "selected" : ""}>${l}</option>`).join("")}<option value="" ${!inp.DCF_기준 ? "selected" : ""}>자동</option></select></label>
             <label class="field"><span>주식수 <small>비우면 자동</small></span><input class="num" data-f="주식수" inputmode="numeric" value="${esc(showIn(inp.주식수))}" placeholder="${isNum(fin.bs?.shares) ? fin.bs.shares.toLocaleString("ko-KR") : ""}"></label>
           </div>
           <label class="field" style="display:flex;margin-top:12px"><span>메모 <small>투자 논지 · 틀렸다고 볼 조건</small></span><textarea data-f="메모" rows="3">${esc(inp.메모 || "")}</textarea></label>
@@ -254,7 +251,16 @@ function draw(v, d) {
       <div id="valTgt"></div>
     </div>
     <div id="valFwd" class="section"></div>
-    <div id="valDcf"></div>
+    <div class="section">
+      <h2>Reverse DCF <span class="sub" id="dcfSub"></span></h2>
+      <div class="card dcf-ctl">
+        <label class="field"><span>할인율 %</span><input class="num" data-f="할인율" inputmode="decimal" value="${esc(showIn(inp.할인율))}" placeholder="${defR(M0.ccy) * 100} (기본)"></label>
+        <label class="field"><span>영구성장률 %</span><input class="num" data-f="영구성장률" inputmode="decimal" value="${esc(showIn(inp.영구성장률))}" placeholder="2.5 (기본)"></label>
+        <label class="field wide"><span>기준 현금흐름</span><select data-f="DCF_기준">${DCF_BASES.map(([k, l]) => `<option value="${k}" ${inp.DCF_기준 === k ? "selected" : ""}>${l}</option>`).join("")}<option value="" ${!inp.DCF_기준 ? "selected" : ""}>자동 (FCF, 없으면 순이익)</option></select></label>
+        <span class="muted dcf-note">할인율은 요구수익률이에요. 비우면 원화 종목 ${defR("KRW") * 100}%, 그 외 ${defR("USD") * 100}%. 아래 민감도 표의 할인율을 눌러도 바뀌어요. 저장 버튼으로 같이 저장돼요.</span>
+      </div>
+      <div id="valDcf"></div>
+    </div>
     <div id="valGrowth"></div>
   </div>`;
 
@@ -286,6 +292,13 @@ function draw(v, d) {
       out();
     });
     if (!isText) el.addEventListener("blur", () => { if (isNum(inp[f])) el.value = showIn(inp[f]); });
+  });
+  document.getElementById("valDcf").addEventListener("click", (e) => {
+    const c = e.target.closest("[data-r]");
+    if (!c) return;
+    const el = v.querySelector('#valCard [data-f="할인율"]');
+    el.value = c.dataset.r;
+    el.dispatchEvent(new Event("input"));
   });
   document.getElementById("valSave").addEventListener("click", async (e) => {
     const b = e.currentTarget;
@@ -362,7 +375,7 @@ function drawOutputs(card, inp) {
       <tbody>${estT.map((e) => `<tr><td class="l">${esc(e.tl)}<div class="th-sub">${amt(e.ni)}${e.niAuto ? " · 자동 포함" : ""}</div></td>${tgt.map(([, per]) => { const t = tPrice(per, e); return `<td><b>${pxTxt(t)}</b><div class="${cls(t / M.px - 1)}" style="font-size:12px">${pctTxt(t / M.px - 1)}</div></td>`; }).join("")}</tr>`).join("")}</tbody>
     </table></div>` : `<div class="empty card">내 추정 분기 4개와 적정 PER(약세·기준·강세 중 하나 이상)을 넣으면 목표가가 나와요.</div>`}`;
 
-  // --- 역DCF ---
+  // --- Reverse DCF ---
   const r = isNum(inp.할인율) ? inp.할인율 / 100 : defR(M.ccy);
   const gT = isNum(inp.영구성장률) ? inp.영구성장률 / 100 : 0.025;
   let base = inp.DCF_기준 || (cur && pos(cur.fcf) ? "FCF" : "순이익");
@@ -375,8 +388,8 @@ function drawOutputs(card, inp) {
   const myG = cur && pos(cur.rev) && pos(M.ntm.rev) ? M.ntm.rev / cur.rev - 1 : NaN;
   const sens = [-0.02, -0.01, 0, 0.01, 0.02].map((dr) => ({ r: r + dr, x: impliedG(baseCf, target, r + dr, gT) }));
   const gTxt = (x) => (!x ? "-" : x.edge === "below" ? "-50% 미만" : x.edge === "above" ? "+150% 초과" : pctTxt(x.g));
+  document.getElementById("dcfSub").textContent = `지금 ${base === "FCF" ? "기업가치(EV)" : "시가총액"}을 정당화하려면 앞으로 10년간 ${DCF_BASES.find((b) => b[0] === base)?.[1] || base}이 매년 얼마나 커야 하나`;
   document.getElementById("valDcf").innerHTML = `
-    <div class="section"><h2>역DCF <span class="sub">지금 ${base === "FCF" ? "기업가치(EV)" : "시가총액"}을 정당화하려면 앞으로 10년간 ${esc(DCF_BASES.find((b) => b[0] === base)?.[1] || base)}이 매년 얼마나 커야 하나</span></h2>
       ${res ? `<div class="metrics">
         <div class="metric hero"><div class="label">시장이 가정한 연 성장률 (10년)</div><div class="value">${gTxt(res)}</div><div class="delta">기준 ${amt(baseCf)} → 10년 뒤 ${res.edge ? "-" : amt(baseCf * (1 + res.g) ** 10)} ${esc(U.label)}</div></div>
         <div class="metric"><div class="label">과거 3년 매출 CAGR</div><div class="value ${cls(cagr("rev"))}">${pctTxt(cagr("rev"))}</div><div class="delta muted">${a3 ? `${esc(a3.k)} → ${esc(M.lastA.k)}` : "실적 3년치 부족"}</div></div>
@@ -384,12 +397,11 @@ function drawOutputs(card, inp) {
         <div class="metric"><div class="label">내 추정 매출 성장 (향후 4분기)</div><div class="value ${cls(myG)}">${pctTxt(myG)}</div><div class="delta muted">${cur ? esc(cur.label) : ""} 대비</div></div>
       </div>
       <div class="table-wrap" style="margin-top:12px"><table class="data">
-        <thead><tr><th class="l">할인율</th>${sens.map((x) => `<th>${(x.r * 100).toFixed(1)}%</th>`).join("")}</tr></thead>
-        <tbody><tr><td class="l">내재 성장률</td>${sens.map((x) => `<td class="${x.r === r ? "hl" : ""}">${gTxt(x.x)}</td>`).join("")}</tr></tbody>
+        <thead><tr><th class="l">할인율</th>${sens.map((x) => `<th class="pick-r${x.r === r ? " hl" : ""}" data-r="${Math.round(x.r * 1000) / 10}" title="이 할인율로 바꾸기">${(x.r * 100).toFixed(1)}%</th>`).join("")}</tr></thead>
+        <tbody><tr><td class="l">내재 성장률</td>${sens.map((x) => `<td class="pick-r${x.r === r ? " hl" : ""}" data-r="${Math.round(x.r * 1000) / 10}">${gTxt(x.x)}</td>`).join("")}</tr></tbody>
       </table></div>
       <p class="caption">할인율 ${(r * 100).toFixed(1)}% · 10년 뒤 영구성장 ${(gT * 100).toFixed(1)}%. 시장 가정이 과거 성장률이나 내 추정보다 높으면 기대가 이미 주가에 많이 들어가 있다는 뜻이에요.</p>`
-      : `<div class="notice warn">${!pos(baseCf) ? `기준 현금흐름(${esc(base)})이 0 이하이거나 비어 있어서 역DCF를 계산할 수 없어요. 기준을 바꾸거나 내 추정 분기 4개를 채워 보세요.` : !pos(target) ? "시가총액/EV 를 계산할 수 없어요 (가격·주식수 확인)." : "할인율이 영구성장률보다 커야 해요."}</div>`}
-    </div>`;
+      : `<div class="notice warn">${!pos(baseCf) ? `기준 현금흐름(${esc(base)})이 0 이하이거나 비어 있어서 Reverse DCF를 계산할 수 없어요. 기준을 바꾸거나 내 추정 분기 4개를 채워 보세요.` : !pos(target) ? "시가총액/EV 를 계산할 수 없어요 (가격·주식수 확인)." : "할인율이 영구성장률보다 커야 해요."}</div>`}`;
 
   // --- 성장률·가속도 ---
   document.getElementById("valGrowth").innerHTML = growthTables(card, M, amt);

@@ -503,3 +503,11 @@ table.tgt .th-sub { font-size: 11px; font-weight: 400; color: var(--text-3); mar
   table.qform td, table.qform th { padding-left: 4px; padding-right: 4px; }
   table.qform .q-tag { display: none; }
 }
+/* Reverse DCF 설정 */
+.dcf-ctl { display: flex; flex-wrap: wrap; gap: 12px 14px; align-items: flex-end; padding: 14px 16px; margin-bottom: 12px; }
+.dcf-ctl .field { flex: 0 1 130px; }
+.dcf-ctl .field.wide { flex: 0 1 240px; }
+.dcf-ctl .dcf-note { flex: 1 1 260px; font-size: 12px; line-height: 1.5; }
+.pick-r { cursor: pointer; }
+.pick-r:hover { background: var(--surface-2); }
+th.pick-r.hl { color: var(--text); font-weight: 600; background: var(--surface-2); }

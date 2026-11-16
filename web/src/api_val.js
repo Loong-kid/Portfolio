@@ -1,5 +1,5 @@
 // 종목 분석 (관리자 전용): 재무 데이터 + 내 추정(시트 valuation 탭).
-// 계산(Forward 지표·목표가·역DCF·성장률)은 입력하는 대로 바로 보이게 화면에서 한다.
+// 계산(Forward 지표·목표가·Reverse DCF·성장률)은 입력하는 대로 바로 보이게 화면에서 한다.
 import * as C from "./calc.js";
 import { readTabs, writeTab, ensureTab } from "./google.js";
 import { loadSheet, loadPrices } from "./store.js";
