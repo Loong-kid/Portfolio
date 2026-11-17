@@ -58,6 +58,12 @@ async function handleApi(req, env, ctx, url) {
     return json({ ...out, sheetAt: sheet.at, stale: sheet.stale }, { headers: { "server-timing": `load;dur=${t1 - t0}, calc;dur=${Date.now() - t1}` } });
   }
 
+  // 게스트: 종목 분석은 보기만 (저장·추가·빼기는 아래 관리자 전용)
+  if (!isAdmin && req.method === "GET" && (path === "/api/valuation" || path === "/api/valuation/ta")) {
+    try { return json(await handleVal(req, env, ctx, url, p, { guest: true })); }
+    catch (e) { if (e.status === 400) return err(400, e.message); throw e; }
+  }
+
   if (!isAdmin) return err(403, "관리자만 볼 수 있어요.");
 
   if (path === "/api/nav" && req.method === "GET") {

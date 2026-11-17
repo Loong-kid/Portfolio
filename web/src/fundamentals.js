@@ -7,17 +7,23 @@
 import { classify, getJson } from "./prices.js";
 
 const STALE_MS = 20 * 3600 * 1000;
+const FIN_V = 2; // 저장 형식 버전 — 올리면 예전 저장분은 카드 열 때 새로 받는다 (2: 이자비용·차입금 세부·재무상태 이력)
 const KEEP_Q = 28, KEEP_A = 12;
 
-const Y_TYPES = [
-  "annualTotalRevenue", "annualOperatingIncome", "annualNetIncomeCommonStockholders", "annualFreeCashFlow",
-  "annualOrdinarySharesNumber", "annualTotalDebt", "annualCashCashEquivalentsAndShortTermInvestments",
-  "quarterlyTotalRevenue", "quarterlyOperatingIncome", "quarterlyNetIncomeCommonStockholders", "quarterlyFreeCashFlow",
-  "quarterlyOrdinarySharesNumber", "quarterlyTotalDebt", "quarterlyCashCashEquivalentsAndShortTermInvestments",
-];
-const FIELD = { TotalRevenue: "rev", OperatingIncome: "oi", NetIncomeCommonStockholders: "ni", FreeCashFlow: "fcf" };
-const BS = { OrdinarySharesNumber: "shares", TotalDebt: "debt", CashCashEquivalentsAndShortTermInvestments: "cash" };
-const FLOWS = ["rev", "oi", "ni", "fcf"];
+// 손익·현금흐름 (기간 합) — ie 이자비용, ebitda, ocf 영업현금흐름
+const FIELD = {
+  TotalRevenue: "rev", OperatingIncome: "oi", NetIncomeCommonStockholders: "ni", FreeCashFlow: "fcf",
+  InterestExpense: "ie", EBITDA: "ebitda", OperatingCashFlow: "ocf",
+};
+// 재무상태 (시점 값) — cd 단기차입금, ltd 장기차입금, eq 자본, ca/cl 유동자산·부채, liab 총부채
+const BS = {
+  OrdinarySharesNumber: "shares", TotalDebt: "debt", CashCashEquivalentsAndShortTermInvestments: "cash",
+  CurrentDebt: "cd", LongTermDebt: "ltd", StockholdersEquity: "eq", CurrentAssets: "ca", CurrentLiabilities: "cl",
+  TotalLiabilitiesNetMinorityInterest: "liab",
+};
+const Y_TYPES = ["annual", "quarterly"].flatMap((p) => [...Object.keys(FIELD), ...Object.keys(BS)].map((t) => p + t));
+const FLOWS = Object.values(FIELD);
+const BS_F = Object.values(BS);
 
 const keyOf = (d) => `${d.slice(0, 4)}.${d.slice(5, 7)}`;               // 2025-12-31 → 2025.12
 const monthIdx = (k) => Number(k.slice(0, 4)) * 12 + Number(k.slice(5, 7)) - 1;
@@ -54,11 +60,11 @@ async function fetchYahoo(sym, budget) {
   // 재무상태: 가장 최근 분기 → 없으면 연간
   const latest = (T) => Object.values(T).sort((a, b) => (a.k < b.k ? 1 : -1));
   const bs = {};
-  for (const f of ["shares", "debt", "cash"]) {
+  for (const f of BS_F) {
     const hit = latest(bsQ).find((r) => fin(r[f])) || latest(bsA).find((r) => fin(r[f]));
     if (hit) { bs[f] = hit[f]; bs[f + "_k"] = hit.k; }
   }
-  return { ccy, annual: Object.values(A), quarterly: Object.values(Q), bs };
+  return { ccy, annual: Object.values(A), quarterly: Object.values(Q), bs, bsA: Object.values(bsA), bsQ: Object.values(bsQ) };
 }
 
 // ---------- 네이버 (한국) ----------
@@ -145,6 +151,12 @@ export async function fetchFundamentals(sym, old, budget) {
     annual: A, quarterly: Q,
     cons: { annual: na?.cons || old?.cons?.annual || [], quarterly: nq?.cons || old?.cons?.quarterly || [] },
     bs: yOk && Object.keys(y.bs).length ? y.bs : old?.bs || {},
+    // 재무상태 이력 (차입금·현금 추이) — 받을 때마다 쌓는다
+    bsHist: {
+      annual: mergePeriods(old?.bsHist?.annual, yOk ? y.bsA : []).slice(-KEEP_A),
+      quarterly: mergePeriods(old?.bsHist?.quarterly, yOk ? y.bsQ : []).slice(-KEEP_Q),
+    },
+    v: FIN_V,
     warn: yOk ? null : `Yahoo 실패: ${String(y?.err).slice(0, 120)}`,
   };
 }
@@ -152,14 +164,14 @@ export async function fetchFundamentals(sym, old, budget) {
 async function save(env, sym, data) {
   await env.KV.put(`fin:${sym}`, JSON.stringify(data));
   const idx = (await env.KV.get("fin:idx", "json")) || {};
-  idx[sym] = data.at;
+  idx[sym] = data.at; idx[sym + "#v"] = FIN_V;
   await env.KV.put("fin:idx", JSON.stringify(idx));
 }
 
 /** 카드 열 때: 저장분이 20시간 안이면 그대로, 아니면 새로 받는다 (실패하면 저장분). */
 export async function getFundamentals(env, sym, { force = false, budget } = {}) {
   const old = await env.KV.get(`fin:${sym}`, "json");
-  if (old && !force && Date.now() - old.at < STALE_MS) return old;
+  if (old && !force && old.v === FIN_V && Date.now() - old.at < STALE_MS) return old;
   try {
     const data = await fetchFundamentals(sym, old, budget);
     await save(env, sym, data);
@@ -174,7 +186,7 @@ export async function getFundamentals(env, sym, { force = false, budget } = {}) 
 export async function refreshFundamentals(env, syms, budget, max = 3) {
   const idx = (await env.KV.get("fin:idx", "json")) || {};
   const now = Date.now();
-  const due = syms.filter((s) => now - (idx[s] || 0) > STALE_MS).sort((a, b) => (idx[a] || 0) - (idx[b] || 0));
+  const due = syms.filter((s) => now - (idx[s] || 0) > STALE_MS || idx[s + "#v"] !== FIN_V).sort((a, b) => (idx[a] || 0) - (idx[b] || 0));
   let done = 0;
   for (const s of due) {
     if (done >= max || budget.left < 6) break;
@@ -182,7 +194,7 @@ export async function refreshFundamentals(env, syms, budget, max = 3) {
       const old = await env.KV.get(`fin:${s}`, "json");
       const data = await fetchFundamentals(s, old, budget);
       await env.KV.put(`fin:${s}`, JSON.stringify(data));
-      idx[s] = data.at;
+      idx[s] = data.at; idx[s + "#v"] = FIN_V;
       done++;
     } catch { idx[s] = now - STALE_MS + 3600 * 1000; } // 실패 → 1시간 뒤 다시
   }

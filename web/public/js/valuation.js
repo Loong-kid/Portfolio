@@ -4,7 +4,7 @@ import { esc, isNum, fmt, api, store } from "./util.js";
 import { toast } from "./edit.js";
 import { renderTech } from "./technical.js";
 
-const V = { name: store.get("valName", null), pane: store.get("valPane", "F") };
+const V = { name: store.get("valName", null), pane: store.get("valPane", "F"), admin: true };
 
 // ---------- 숫자 ----------
 const unitOf = (ccy) => (ccy === "KRW" ? { div: 1e8, label: "억원" } : { div: 1e6, label: `백만 ${ccy}` });
@@ -59,7 +59,7 @@ function lastFour(Q) {
   const l = q.slice(-4);
   for (let i = 1; i < 4; i++) { const d = mIdx(l[i].k) - mIdx(l[i - 1].k); if (d < 2 || d > 4) return null; }
   const sum = (f) => (l.every((r) => isNum(r[f])) ? l.reduce((a, r) => a + r[f], 0) : NaN);
-  return { k: l[3].k, rev: sum("rev"), oi: sum("oi"), ni: sum("ni"), fcf: sum("fcf") };
+  return { k: l[3].k, rev: sum("rev"), oi: sum("oi"), ni: sum("ni"), fcf: sum("fcf"), ie: sum("ie"), ebitda: sum("ebitda"), ocf: sum("ocf") };
 }
 
 function model(card, inp) {
@@ -141,7 +141,8 @@ function model(card, inp) {
 }
 
 // ---------- 화면 ----------
-export async function renderValuation(v) {
+export async function renderValuation(v, opts = {}) {
+  V.admin = opts.admin !== false;
   const tok = v.dataset.tok;
   v.innerHTML = `<div class="skeleton">종목 분석 불러오는 중…</div>`;
   let d;
@@ -164,7 +165,8 @@ function picker(items, sel) {
   };
   return `<div class="val-pick">
     ${group("보유").length ? `<div class="pick-row"><span class="pick-label">보유</span><div class="chips">${group("보유").map(chip).join("")}</div></div>` : ""}
-    <div class="pick-row"><span class="pick-label">보유 예정</span><div class="chips">${group("보유 예정").map(chip).join("")}<button class="chip chip-add" id="addOpen" aria-expanded="false">+ 종목 추가</button></div></div>
+    <div class="pick-row"><span class="pick-label">보유 예정</span><div class="chips">${group("보유 예정").map(chip).join("")}${V.admin ? `<button class="chip chip-add" id="addOpen" aria-expanded="false">+ 종목 추가</button>` : ""}</div></div>
+    ${V.admin ? "" : `<p class="caption" style="margin:0">게스트 보기 — 숫자를 바꿔 계산해 볼 수는 있지만 저장·종목 추가는 안 돼요.</p>`}
     <form class="card add-form" id="addForm" hidden>
       <label class="field"><span>종목명</span><input name="종목" placeholder="예: 엔비디아" required></label>
       <label class="field"><span>티커 · 종목코드</span><input name="심볼" placeholder="NVDA · 005930 · 8725.T · AIXA.DE" required autocapitalize="characters"></label>
@@ -244,7 +246,7 @@ function draw(v, d) {
           ${fin.bs?.shares_k ? `<span>주식수·부채 기준 ${esc(fin.bs.shares_k)}</span>` : ""}
         </div>
       </div>
-      <button class="btn ghost sm" id="finRefresh">재무 다시 받기</button>
+      ${V.admin ? `<button class="btn ghost sm" id="finRefresh">재무 다시 받기</button>` : ""}
     </div>
     ${headExtras(card, inp)}
     ${paneSeg()}
@@ -252,6 +254,7 @@ function draw(v, d) {
     ${fin.warn ? `<div class="notice warn">${esc(fin.warn)}</div>` : ""}
     ${!isNum(M0.conv) ? `<div class="notice warn">주가 통화(${esc(item.통화)})와 재무 통화(${esc(M0.ccy)})가 달라서 환산을 못 해요. 시가총액 기반 지표는 비어 보여요. (ADR 이면 주식수 칸에 ADR 환산 주식수를 넣어 주세요.)</div>` : ""}
     <div id="valNow"></div>
+    <div id="valRisk"></div>
 
     <div class="val-grid section">
       <div>
@@ -302,8 +305,9 @@ function draw(v, d) {
 
   const out = () => drawOutputs(card, inp);
   out();
+  drawRisk(document.getElementById("valRisk"), card, M0);
   bindPick(v, reload);
-  document.getElementById("finRefresh").addEventListener("click", () => reload(item.종목, true));
+  document.getElementById("finRefresh")?.addEventListener("click", () => reload(item.종목, true));
 
   const markDirty = S.markDirty;
   v.querySelectorAll("#valCard [data-q]").forEach((el) => {
@@ -354,7 +358,7 @@ function saver(item, inp) {
   const states = () => document.querySelectorAll(".val-state");
   const stateTxt = () => (st.dirty ? "저장 안 된 변경 있음" : inp.업데이트일 ? `마지막 저장 ${inp.업데이트일}` : "아직 저장 안 함");
   const markDirty = () => { if (!st.dirty) { st.dirty = true; states().forEach((e) => (e.textContent = stateTxt())); } };
-  const saveBtn = () => `<div class="toolbar actions"><button class="btn primary" data-save>저장</button><span class="muted val-state" style="font-size:13px">${esc(stateTxt())}</span></div>`;
+  const saveBtn = () => !V.admin ? `<p class="caption">게스트 보기라 저장은 안 돼요 (바꾼 숫자는 이 화면에서만 계산돼요).</p>` : `<div class="toolbar actions"><button class="btn primary" data-save>저장</button><span class="muted val-state" style="font-size:13px">${esc(stateTxt())}</span></div>`;
   const save = async (b) => {
     const badQ = inp.quarters.some((q) => ["rev", "oi", "ni"].some((f) => Number.isNaN(q[f])));
     if (badQ || Object.values(inp).some((x) => Number.isNaN(x))) { toast("숫자가 아닌 칸이 있어요 (빨간 칸).", "err"); return; }
@@ -422,7 +426,7 @@ function headExtras(card, inp) {
   return `<div class="val-buy">
     <label class="field"><span>매수 희망가 <small>${esc(item.통화)}</small></span><input class="num" data-h="매수_희망가" inputmode="decimal" value="${esc(showIn(inp.매수_희망가))}" placeholder="이 가격 이하면 진입"></label>
     <div class="buy-gap" id="buyGap"></div>
-    ${item.구분 === "보유 예정" ? `<button class="btn ghost sm" id="itemRemove">보유 예정에서 빼기</button>` : ""}
+    ${item.구분 === "보유 예정" && V.admin ? `<button class="btn ghost sm" id="itemRemove">보유 예정에서 빼기</button>` : ""}
   </div>`;
 }
 
@@ -546,6 +550,93 @@ function drawOutputs(card, inp) {
 
   // --- 성장률·가속도 ---
   document.getElementById("valGrowth").innerHTML = growthTables(card, M, amt);
+}
+
+// ---------- 재무 안정성 (리스크) ----------
+const R = { per: store.get("riskPer", "A") };
+// 판정 기준 (캡션에도 그대로 적는다)
+const LV = { ok: "양호", warn: "주의", bad: "위험" };
+const lvCover = (oi, ie) => (!isNum(ie) || ie <= 0 ? (isNum(oi) ? ["ok", "이자비용 거의 없음"] : null)
+  : !isNum(oi) ? null : oi <= 0 ? ["bad", "영업적자 — 이자를 영업이익으로 못 냄"] : oi / ie < 1 ? ["bad", "영업이익 < 이자비용"] : oi / ie < 3 ? ["warn", ""] : ["ok", ""]);
+const lvNdE = (net, e) => (!isNum(net) ? null : net <= 0 ? ["ok", "순현금"] : !isNum(e) ? null : e <= 0 ? ["bad", "EBITDA 적자"] : net / e > 5 ? ["bad", ""] : net / e > 3 ? ["warn", ""] : ["ok", ""]);
+const lvDebt = (r) => (!isNum(r) ? null : r < 0 ? ["bad", "자본잠식"] : r > 4 ? ["bad", ""] : r > 2 ? ["warn", ""] : ["ok", ""]);
+const lvCur = (r) => (!isNum(r) ? null : r < 0.7 ? ["bad", ""] : r < 1 ? ["warn", ""] : ["ok", ""]);
+const lvCash = (cash, cd) => (!isNum(cash) || !isNum(cd) || cd <= 0 ? null : cash / cd < 0.3 ? ["bad", ""] : cash / cd < 1 ? ["warn", ""] : ["ok", ""]);
+const badge = (lv) => (lv ? `<span class="risk-lv ${lv[0]}">${LV[lv[0]]}</span>${lv[1] ? `<span class="risk-why">${esc(lv[1])}</span>` : ""}` : "");
+const ratio = (a, b) => (isNum(a) && isNum(b) && b !== 0 ? a / b : NaN);
+
+function drawRisk(box, card, M) {
+  const fin = card.fin, bs = fin.bs || {}, U = M.U, cur = M.cur || {};
+  const amt = (x) => (isNum(x) ? (Math.abs(x / U.div) >= 100 ? Math.round(x / U.div).toLocaleString("ko-KR") : (x / U.div).toLocaleString("ko-KR", { maximumFractionDigits: 1 })) : "-");
+  const pctS = (x, d = 0) => (isNum(x) ? `${(x * 100).toFixed(d)}%` : "-");
+  const xS = (x) => (isNum(x) ? `${x.toFixed(1)}배` : "-");
+  const debt = bs.debt, cash = bs.cash;
+  if (!isNum(debt) && !isNum(cash) && !isNum(bs.liab)) { box.innerHTML = ""; return; }
+  const net = (isNum(debt) ? debt : 0) - (isNum(cash) ? cash : 0);
+  const ie = isNum(cur.ie) ? Math.abs(cur.ie) : NaN, oi = cur.oi, ebitda = cur.ebitda;
+  const L = {
+    cover: lvCover(oi, ie), nde: lvNdE(net, ebitda), debt: lvDebt(ratio(bs.liab, bs.eq)),
+    cur: lvCur(ratio(bs.ca, bs.cl)), cash: lvCash(cash, bs.cd),
+  };
+  const lvs = Object.values(L).filter(Boolean).map((x) => x[0]);
+  const nBad = lvs.filter((x) => x === "bad").length, nWarn = lvs.filter((x) => x === "warn").length;
+  const sum = nBad ? `위험 ${nBad}개${nWarn ? ` · 주의 ${nWarn}개` : ""}` : nWarn ? `주의 ${nWarn}개` : lvs.length ? "모두 양호" : "";
+  const tile = (label, value, sub, lv) => `<div class="metric risk-tile"><div class="label">${label}</div><div class="value">${value}</div><div class="delta muted">${sub}</div>${lv ? `<div class="risk-badge">${badge(lv)}</div>` : ""}</div>`;
+  const per = cur.label ? esc(cur.label) : "";
+  box.innerHTML = `
+    <div class="section">
+      <h2>재무 안정성 <span class="sub">${esc(U.label)} · 재무상태 ${esc(bs.debt_k || bs.liab_k || "")} 기준 · 손익 ${per}${sum ? ` · <b class="risk-sum ${nBad ? "bad" : nWarn ? "warn" : "ok"}">${sum}</b>` : ""}</span></h2>
+      <div class="metrics risk-grid">
+        ${tile("총차입금", amt(debt), isNum(bs.cd) || isNum(bs.ltd) ? `단기 ${amt(bs.cd)} · 장기 ${amt(bs.ltd)}${isNum(bs.cd) && pos(debt) ? ` (단기 ${pctS(bs.cd / debt)})` : ""}` : "리스 부채 포함")}
+        ${tile("현금성자산", amt(cash), isNum(bs.cd) && bs.cd > 0 ? `단기차입금의 ${xS(ratio(cash, bs.cd))}` : "현금 + 단기금융상품", L.cash)}
+        ${tile(net < 0 ? "순현금" : "순차입금", amt(Math.abs(net)), isNum(ebitda) && ebitda > 0 && net > 0 ? `EBITDA(${amt(ebitda)})의 ${xS(net / ebitda)}` : `EBITDA ${amt(ebitda)}`, L.nde)}
+        ${tile("이자비용 / 영업이익", isNum(ie) && pos(oi) ? pctS(ie / oi, 1) : isNum(ie) && isNum(oi) ? "영업적자" : "-", `이자비용 ${amt(ie)} · 영업이익 ${amt(oi)}`, L.cover)}
+        ${tile("이자보상배율", isNum(ie) && ie > 0 && isNum(oi) ? xS(oi / ie) : "-", "영업이익 ÷ 이자비용 (몇 번 갚을 수 있나)")}
+        ${tile("부채비율", pctS(ratio(bs.liab, bs.eq)), `총부채 ${amt(bs.liab)} ÷ 자본 ${amt(bs.eq)}`, L.debt)}
+        ${tile("유동비율", pctS(ratio(bs.ca, bs.cl)), "유동자산 ÷ 유동부채 (1년 안 갚을 돈)", L.cur)}
+        ${tile("평균 차입금리 (근사)", isNum(ie) && pos(debt) ? pctS(ie / debt, 1) : "-", `이자비용 ÷ 총차입금${isNum(cur.ocf) ? ` · 영업현금흐름 ${amt(cur.ocf)}` : ""}`)}
+      </div>
+      <div class="ta-head" style="margin-top:14px">
+        <h2 style="margin:0;font-size:15px">추이</h2>
+        <div class="seg" id="riskPer"><button data-r="A" aria-pressed="${R.per === "A"}">연간</button><button data-r="Q" aria-pressed="${R.per === "Q"}">분기</button></div>
+      </div>
+      <div id="riskTable"></div>
+      <p class="caption">판정 기준 — 이자보상배율 3배 미만 주의 · 1배 미만(또는 영업적자) 위험, 순차입금/EBITDA 3배 초과 주의 · 5배 초과 위험, 부채비율 200% 초과 주의 · 400% 초과 위험, 유동비율 100% 미만 주의 · 70% 미만 위험, 현금이 단기차입금보다 적으면 주의 · 30% 미만 위험. 금융업(보험·은행)은 부채 구조가 달라 이 기준이 맞지 않아요. 차입금·이자는 Yahoo 재무 기준이에요.</p>
+    </div>`;
+  const drawTable = () => {
+    const isA = R.per === "A";
+    const B = ((isA ? fin.bsHist?.annual : fin.bsHist?.quarterly) || []).filter((r) => isNum(r.debt) || isNum(r.cash) || isNum(r.liab));
+    const F = isA ? fin.annual : fin.quarterly;
+    const keys = [...new Set([...B.map((r) => r.k), ...F.filter((r) => isNum(r.ie)).map((r) => r.k)])].sort().slice(isA ? -5 : -8);
+    if (!keys.length) { box.querySelector("#riskTable").innerHTML = `<div class="empty card">추이 데이터가 아직 없어요 (재무를 받을 때마다 쌓여요)</div>`; return; }
+    const near = (list, k) => list.find((x) => Math.abs(mIdx(x.k) - mIdx(k)) <= 1) || {};
+    const cols = keys.map((k) => {
+      const b = near(B, k), f = near(F, k);
+      const nd = isNum(b.debt) || isNum(b.cash) ? (b.debt || 0) - (b.cash || 0) : NaN;
+      const ie2 = isNum(f.ie) ? Math.abs(f.ie) : NaN;
+      return { k, b, f, nd, ie: ie2, cover: isNum(ie2) && ie2 > 0 && isNum(f.oi) ? f.oi / ie2 : NaN, ieOi: isNum(ie2) && pos(f.oi) ? ie2 / f.oi : NaN, dr: ratio(b.liab, b.eq) };
+    });
+    const row = (label, fn, cls2 = "") => `<tr class="${cls2}"><td class="l sticky">${label}</td>${cols.map((c) => `<td>${fn(c)}</td>`).join("")}</tr>`;
+    box.querySelector("#riskTable").innerHTML = `<div class="table-wrap"><table class="data gtable">
+      <thead><tr><th class="l sticky"></th>${cols.map((c) => `<th>${isA ? c.k.slice(0, 4) : `${c.k.slice(2, 4)}.${c.k.slice(5)}`}</th>`).join("")}</tr></thead>
+      <tbody>
+        ${row("총차입금", (c) => amt(c.b.debt), "r-val")}
+        ${row("현금성자산", (c) => amt(c.b.cash))}
+        ${row("순차입금", (c) => (isNum(c.nd) ? (c.nd < 0 ? `<span class="muted">순현금</span> ${amt(-c.nd)}` : amt(c.nd)) : "-"), "r-acc")}
+        ${row("부채비율", (c) => pctS(c.dr), "r-acc")}
+        ${row("이자비용", (c) => amt(c.ie), "r-val")}
+        ${row("영업이익", (c) => amt(c.f.oi))}
+        ${row("이자비용 / 영업이익", (c) => (isNum(c.ieOi) ? pctS(c.ieOi, 1) : isNum(c.ie) && isNum(c.f.oi) && c.f.oi <= 0 ? `<span class="g-word">영업적자</span>` : "-"))}
+        ${row("이자보상배율", (c) => { const lv = lvCover(c.f.oi, c.ie); return `${xS(c.cover)}${lv && lv[0] !== "ok" ? ` <span class="risk-lv ${lv[0]} sm">${LV[lv[0]]}</span>` : ""}`; })}
+      </tbody></table></div>`;
+  };
+  drawTable();
+  box.querySelector("#riskPer").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-r]"); if (!b) return;
+    R.per = b.dataset.r; store.set("riskPer", R.per);
+    box.querySelectorAll("#riskPer button").forEach((x) => x.setAttribute("aria-pressed", x === b));
+    drawTable();
+  });
 }
 
 function growthTables(card, M, amt) {

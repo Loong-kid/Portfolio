@@ -45,7 +45,7 @@ async function showLogin(msg = "") {
 
 // ---------- 뼈대 ----------
 const TABS_ADMIN = [["port", "현재 포트폴리오"], ["snap", "스냅샷"], ["flows", "자금 흐름"], ["nav", "자산 추이"], ["notes", "종목 메모"], ["val", "종목 분석"], ["settings", "설정"]];
-const TABS_GUEST = [["port", "현재 포트폴리오"], ["notes", "종목 메모"]];
+const TABS_GUEST = [["port", "현재 포트폴리오"], ["notes", "종목 메모"], ["val", "종목 분석"]];
 
 function shell() {
   const admin = S.me.role === "admin";
@@ -138,7 +138,7 @@ function renderView() {
   else if (S.tab === "snap") renderSnapshots(v, ctx);
   else if (S.tab === "flows") renderFlows(v, ctx);
   else if (S.tab === "settings") renderSettings(v, ctx);
-  else if (S.tab === "val") renderValuation(v);
+  else if (S.tab === "val") renderValuation(v, { admin: S.me.role === "admin" });
 }
 
 const isCash = (r) => r.평균단가 == null && !isNum(r.수익률);

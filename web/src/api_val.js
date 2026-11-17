@@ -81,7 +81,8 @@ async function probe(sym) {
   return { sym, ccy: meta.currency || "", p: Number(meta.regularMarketPrice) };
 }
 
-export async function handleVal(req, env, ctx, url, p) {
+export async function handleVal(req, env, ctx, url, p, { guest = false } = {}) {
+  if (guest) url.searchParams.delete("refresh");
   const path = url.pathname, m = req.method;
   const today = C.todayKst();
 
@@ -139,6 +140,7 @@ export async function handleVal(req, env, ctx, url, p) {
   if (m === "GET") {
     const sheet = await loadSheet(env, ctx, p);
     const list = items(sheet.tabs, today);
+    if (guest) for (const i of list) delete i.수량;
     const name = url.searchParams.get("name");
     const item = list.find((i) => i.종목 === name) || list[0];
     if (!item) return { items: list, card: null };

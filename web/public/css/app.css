@@ -557,3 +557,16 @@ table.ta-stops tr.sel td:first-child { box-shadow: inset 3px 0 0 var(--accent); 
 .val-buy .buy-gap { padding-bottom: 9px; font-size: 14px; font-variant-numeric: tabular-nums; }
 .val-buy #itemRemove { margin-left: auto; margin-bottom: 4px; }
 .buy-hit { font-size: 12px; font-weight: 500; padding: 2px 8px; border-radius: var(--pill); background: color-mix(in srgb, var(--up) 14%, transparent); color: var(--up); }
+
+/* ---------- 재무 안정성 ---------- */
+.risk-grid { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+.risk-tile { position: relative; }
+.risk-badge { margin-top: 8px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.risk-lv { font-size: 11px; font-weight: 520; padding: 2px 8px; border-radius: var(--pill); background: var(--neutral-tint); color: var(--text-2); }
+.risk-lv.sm { padding: 1px 6px; font-size: 10.5px; }
+.risk-lv.warn { background: var(--warn-bg); color: var(--warn-ink); }
+.risk-lv.bad { background: var(--err-bg); color: var(--err-ink); }
+.risk-why { font-size: 11.5px; color: var(--text-3); }
+.risk-sum { font-weight: 520; }
+.risk-sum.warn { color: var(--warn-ink); }
+.risk-sum.bad { color: var(--err-ink); }
